@@ -1,0 +1,318 @@
+#include "Display.h"
+#include "Display_Chars.h"
+
+
+#define DISPLAY_DIGIT_LEFT  1
+#define DISPLAY_DIGIT_RIGHT 0
+
+#define DISP_A       GPIO_Pin_13
+#define DISP_B       GPIO_Pin_12
+#define DISP_C       GPIO_Pin_11
+#define DISP_D       GPIO_Pin_10
+#define DISP_E       GPIO_Pin_2
+#define DISP_F       GPIO_Pin_1
+#define DISP_G       GPIO_Pin_12
+#define DISP_DOT     GPIO_Pin_7
+#define DISP_UN      GPIO_Pin_6
+
+uint8_t DigitRight;
+uint8_t DigitLeft;
+
+uint8_t PointMiddle;
+uint8_t PointRight;
+
+
+//==================================================================================================
+//
+//==================================================================================================
+void Display_Init(void)
+{
+
+	GPIO_InitTypeDef GPIO_InitStructure;
+
+	/* GPIOC Periph clock enable */
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOB, ENABLE);
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOA, ENABLE);
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOF, ENABLE);
+
+	GPIO_InitStructure.GPIO_Pin = DISP_F|DISP_E|DISP_D|DISP_C|DISP_B|DISP_A;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+
+	GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+	GPIO_InitStructure.GPIO_Pin = DISP_DOT|DISP_UN;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+
+	GPIO_Init(GPIOF, &GPIO_InitStructure);
+
+	GPIO_InitStructure.GPIO_Pin = DISP_G;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+	GPIO_WriteBit(GPIOB, DISP_A,0);
+	GPIO_WriteBit(GPIOB, DISP_B,0);
+	GPIO_WriteBit(GPIOB, DISP_C,0);
+	GPIO_WriteBit(GPIOB, DISP_D,0);
+	GPIO_WriteBit(GPIOB, DISP_E,0);
+	GPIO_WriteBit(GPIOB, DISP_F,0);
+	GPIO_WriteBit(GPIOA, DISP_G,0);
+	GPIO_WriteBit(GPIOF, DISP_DOT,0);
+
+	DigitRight = 0x00;
+	DigitLeft = 0x00;
+
+	PointMiddle = 0;
+	PointRight = 0;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Display_ParallelInterface(uint8_t ucByte)
+{
+	union {
+		uint8_t _Byte;
+		struct {
+			uint8_t _bA :1;
+			uint8_t _bB :1;
+			uint8_t _bC :1;
+			uint8_t _bD :1;
+			uint8_t _bE :1;
+			uint8_t _bF :1;
+			uint8_t _bG :1;
+			uint8_t _bDP :1;
+		} _Bits;
+	} Scc;
+
+	Scc._Byte = ucByte;
+	GPIO_WriteBit(GPIOB, DISP_A,(BitAction)Scc._Bits._bA);
+	GPIO_WriteBit(GPIOB, DISP_B,(BitAction)Scc._Bits._bB);
+	GPIO_WriteBit(GPIOB, DISP_C,(BitAction)Scc._Bits._bC);
+	GPIO_WriteBit(GPIOB, DISP_D,(BitAction)Scc._Bits._bD);
+	GPIO_WriteBit(GPIOB, DISP_E,(BitAction)Scc._Bits._bE);
+	GPIO_WriteBit(GPIOB, DISP_F,(BitAction)Scc._Bits._bF);
+	GPIO_WriteBit(GPIOA, DISP_G,(BitAction)Scc._Bits._bG);
+	GPIO_WriteBit(GPIOF, DISP_DOT,(BitAction)Scc._Bits._bDP);
+
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+uint8_t Display_ASCIITable(uint8_t ch)
+{
+	uint8_t Ret;
+
+	switch( ch )
+	{
+		//----------------------------
+		// Numbers
+		case '0': { Ret = _0_; break; }
+		case '1': { Ret = _1_; break; }
+		case '2': { Ret = _2_; break; }
+		case '3': { Ret = _3_; break; }
+		case '4': { Ret = _4_; break; }
+		case '5': { Ret = _5_; break; }
+		case '6': { Ret = _6_; break; }
+		case '7': { Ret = _7_; break; }
+		case '8': { Ret = _8_; break; }
+		case '9': { Ret = _9_; break; }
+
+		//----------------------------
+		// Letters
+		case 'A': { Ret = _A_; break; }
+		case 'a': { Ret = _A_; break; }
+		case 'B': { Ret = _b_; break; }
+		case 'b': { Ret = _b_; break; }
+		case 'C': { Ret = _C_; break; }
+		case 'c': { Ret = _c_; break; }
+		case 'D': { Ret = _d_; break; }
+		case 'd': { Ret = _d_; break; }
+		case 'E': { Ret = _E_; break; }
+		case 'e': { Ret = _E_; break; }
+		case 'F': { Ret = _F_; break; }
+		case 'f': { Ret = _F_; break; }
+		case 'G': { Ret = _G_; break; }
+		case 'g': { Ret = _G_; break; }
+		case 'H': { Ret = _H_; break; }
+		case 'h': { Ret = _h_; break; }
+		case 'i': { Ret = _i_; break; }
+		case 'I': { Ret = _I_; break; }
+		case 'J': { Ret = _J_; break; }
+		case 'j': { Ret = _J_; break; }
+		//case 'K': { Ret = ???; break; }
+		//case 'k': { Ret = ???; break; }
+		case 'L': { Ret = _L_; break; }
+		case 'l': { Ret = _L_; break; }
+		//case 'M': { Ret = ???; break; }
+		//case 'm': { Ret = ???; break; }
+		case 'N': { Ret = _n_; break; }
+		case 'n': { Ret = _n_; break; }
+		case 'O': { Ret = _O_; break; }
+		case 'o': { Ret = _o_; break; }
+		case 'P': { Ret = _P_; break; }
+		case 'p': { Ret = _P_; break; }
+		//case 'Q': { Ret = ???; break; }
+		//case 'q': { Ret = ???; break; }
+		case 'R': { Ret = _r_; break; }
+		case 'r': { Ret = _r_; break; }
+		case 'S': { Ret = _S_; break; }
+		case 's': { Ret = _S_; break; }
+		case 'T': { Ret = _t_; break; }
+		case 't': { Ret = _t_; break; }
+		case 'U': { Ret = _U_; break; }
+		case 'u': { Ret = _u_; break; }
+		//case 'V': { Ret = ???; break; }
+		//case 'V': { Ret = ???; break; }
+		case 'X': { Ret = _H_; break; }
+		case 'x': { Ret = _H_; break; }
+		case 'Y': { Ret = _Y_; break; }
+		case 'y': { Ret = _Y_; break; }
+		//case 'Z': { Ret = ???; break; }
+		//case 'z': { Ret = ???; break; }
+
+		//----------------------------
+		// Special Characters
+		case '°':  { Ret = _GRAUS_; break; }
+		case '-':  { Ret = _SEG_G_; break; }
+		case '_':  { Ret = _SEG_D_; break; }
+		case ' ':  { Ret = _SP_;    break; }
+		case '\'': { Ret = _MINUTOS_;    break; }
+		case '\"': { Ret = _SEGUNDOS_;    break; }
+
+		//----------------------------
+		// Default
+		default:  { Ret = 0;       break; }
+
+	}
+
+	return Ret;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Display_UpdateChar(uint8_t CharLeft, uint8_t CharRight)
+{
+	DigitRight = Display_ASCIITable(CharRight);
+	DigitLeft  = Display_ASCIITable(CharLeft);
+	PointMiddle = 0;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Display_UpdatePoints(uint8_t Value, uint8_t Point)
+{
+	if( Point & DISPLAY_POINT_MIDDLE ) PointMiddle = Value;
+	if( Point & DISPLAY_POINT_RIGHT  ) PointRight = Value;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Display_UpdateDecimal(uint8_t DecimalDigitLeft, uint8_t DecimalDigitRight)
+{
+	DigitRight = NUMBER_TABLE[DecimalDigitLeft];
+	DigitLeft = NUMBER_TABLE[DecimalDigitRight];
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Display_Task(void)
+{
+	static uint8_t ucDigitSelect;
+
+	if (ucDigitSelect == DISPLAY_DIGIT_RIGHT)
+	{
+		Display_ParallelInterface( _SP_ );
+
+		GPIO_WriteBit(GPIOF, DISP_UN, (BitAction)DISPLAY_DIGIT_RIGHT);
+
+		if (PointRight)
+		{
+			Display_ParallelInterface(DigitRight | 0x80);
+		}
+		else
+		{
+			Display_ParallelInterface(DigitRight);
+		}
+
+		ucDigitSelect = DISPLAY_DIGIT_LEFT;
+	}
+	else // if (ucDigitSelect == DISPLAY_DIGIT_LEFT)
+	{
+		Display_ParallelInterface( _SP_ );
+
+		GPIO_WriteBit(GPIOF, DISP_UN, (BitAction)DISPLAY_DIGIT_LEFT);
+
+		if (PointMiddle)
+		{
+			Display_ParallelInterface(DigitLeft | 0x80);
+		}
+		else
+		{
+			Display_ParallelInterface(DigitLeft);
+		}
+
+		ucDigitSelect = DISPLAY_DIGIT_RIGHT;
+	}
+
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Display_UpdateValue(int32_t Value)
+{
+	if ( (Value < 0) && (Value > -19) ) // -X to -1.0
+	{
+		DigitRight = NUMBER_TABLE[(~Value+1)/10];
+		DigitLeft = _SEG_G_;
+
+		PointMiddle = 1;
+		PointRight  = 0;
+	}
+	else if( ( Value < 10 ) && ( Value >= 0 ) )  // 0 to 0.9
+	{
+		DigitRight = NUMBER_TABLE[Value];
+		DigitLeft = NUMBER_TABLE[0];
+
+		PointMiddle = 1;
+		PointRight  = 0;
+	}
+	else if (Value < 100  ) // 1.0 to 9.9
+	{
+		DigitRight = NUMBER_TABLE[Value%10];
+		DigitLeft = NUMBER_TABLE[Value/10];
+
+		PointMiddle = 1;
+		PointRight = 0;
+	}
+	else if( Value >= 100 )  // 10.0 to X
+	{
+		int32_t val = Value/10;
+
+		DigitRight = NUMBER_TABLE[val%10];
+		DigitLeft = NUMBER_TABLE[val/10];
+
+		PointMiddle = 0;
+		PointRight = 0;
+	}
+	else
+	{
+		DigitLeft = _E_;
+		DigitRight = _r_;
+	}
+}

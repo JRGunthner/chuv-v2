@@ -1,0 +1,18 @@
+#ifndef __NTC_H
+  #define __NTC_H
+
+#include "stm32f0xx.h"
+
+//-------------------------------
+// NTC_GetWaterTemperature(uint8_t Type) defines
+#define TEMPERATURE_INLET			1   // Inlet Water temperature Sensor (celsius degrees)
+#define TEMPERATURE_OUTLET			2   // Outlet Water temperature Sensor (celsius degrees)
+#define TEMPERATURE_RESISTANCE		3   // Water temperature Sensor - Resistance (read from resistance element - celsius degrees)
+
+//-------------------------------
+// Functions Definitions
+void    NTC_Init (void);
+int16_t NTC_GetWaterTemperature(uint8_t Type);   // Return example - 400 is 40.0 C - 355 is 35.5 C
+
+
+#endif

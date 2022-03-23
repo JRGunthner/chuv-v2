@@ -1,0 +1,64 @@
+#include "Buzzer.h"
+#include "stm32f0xx.h"                  // STM32F0xx Definitions
+
+uint8_t BuzzerOnOff = 0;
+uint8_t Buzzer = 0;	
+
+//==================================================================================================
+//
+//==================================================================================================
+void Buzzer_Init (void)
+{
+	GPIO_InitTypeDef GPIO_InitStructure;
+
+	/* GPIOC Periph clock enable */
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOA, ENABLE);
+
+	/* Configure PC10 and PC11 in output pushpull mode */
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_8;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+	GPIO_ResetBits(GPIOA, GPIO_Pin_8 );
+
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Buzzer_Task ()
+{
+	if (BuzzerOnOff == 1 )
+	{
+		Buzzer = ~Buzzer;
+		GPIO_WriteBit(GPIOA, GPIO_Pin_8, Buzzer);
+	}
+	else
+	{	
+		Buzzer = 0;
+		GPIO_WriteBit(GPIOA, GPIO_Pin_8, Buzzer);
+	}
+	
+	
+}
+
+
+//==================================================================================================
+//
+//==================================================================================================
+void Buzzer_On()
+{
+	BuzzerOnOff = 1;
+
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Buzzer_Off()
+{
+	BuzzerOnOff = 0;
+}

@@ -1,0 +1,120 @@
+#include "Touch.h"
+#include "AD.h"
+#include "PWM.h"
+
+#define TOUCH_BUFFER_LEN 10
+
+uint16_t Buffer_Touch_Up[TOUCH_BUFFER_LEN];
+uint16_t Buffer_Touch_Down[TOUCH_BUFFER_LEN];
+
+uint32_t MeanUp = 0;
+uint32_t MeanDown = 0;
+
+xQueueHandle *TouchQueueHandler;
+
+//==================================================================================================
+//
+//==================================================================================================
+void TOUCH_Init (xQueueHandle *QueueHandler)
+{
+	PWM_Init();
+	AD_Init();
+
+	TouchQueueHandler = QueueHandler;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+uint32_t TOUCH_GetArithmeticMeanUp (void)
+{
+	return MeanUp;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+uint32_t TOUCH_GetArithmeticMeanDown (void)
+{
+	return MeanDown;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+uint32_t TOUCH_GetWeightedArithmeticMeanUp (void)
+{
+//	uint8_t i;
+//	uint32_t Mean = 0;
+//
+//	for(i=0; i<5; i++ )
+//	{
+//		Mean = Mean + (Buffer_Touch_Up[i]*(5-i));
+//	}
+//
+//	return Mean/15;
+
+	return 0;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+uint32_t TOUCH_GetWeightedArithmeticMeanDown (void)
+{
+//	uint8_t i;
+//	uint32_t Mean = 0;
+//
+//	for(i=0; i<5; i++ )
+//	{
+//		Mean = Mean + (Buffer_Touch_Down[i]*(5-i));
+//	}
+//
+//	return Mean/15;
+
+	return 0;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void TOUCH_Task (void)
+{
+	uint32_t Data;
+	uint8_t i;
+
+	for(i=0; i<100; i++)
+	{
+		static portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
+
+		uint8_t i;
+		uint32_t MeanUpAux = 0;
+		uint32_t MeanDownAux = 0;
+
+		for( i=1; i<TOUCH_BUFFER_LEN; i++)
+		{
+			Buffer_Touch_Up[i] = Buffer_Touch_Up[i-1];
+			Buffer_Touch_Down[i] = Buffer_Touch_Down[i-1];
+		}
+
+		Buffer_Touch_Up[0]   = AD_GetValue(AD_TOUCH_UP);
+		Buffer_Touch_Down[0] = AD_GetValue(AD_TOUCH_DOWN);
+
+		for(i=0; i<TOUCH_BUFFER_LEN; i++ )
+		{
+			MeanUpAux = MeanUpAux + Buffer_Touch_Up[i];
+			MeanDownAux = MeanDownAux + Buffer_Touch_Down[i];
+		}
+
+		MeanUp = MeanUpAux/TOUCH_BUFFER_LEN;
+		MeanDown = MeanDownAux/TOUCH_BUFFER_LEN;
+
+		if( Data > 0)
+		{
+			xQueueSendFromISR(*TouchQueueHandler, &Data, &xHigherPriorityTaskWoken);
+			break;
+		}
+	}
+
+	vTaskDelay(16);
+}

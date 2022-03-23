@@ -1,0 +1,552 @@
+#include "Triac.h"
+
+#define TRUE  1
+#define FALSE 0
+
+//----------------------------------------------
+// Debug
+static uint8_t debug = 0;			// Used to check if "Zero Crossing" interruption is working ( alternates 0/1 on pin every time a interruption occur)
+
+//----------------------------------------------
+// Variable used to control the amount of power delivered to the resistance element
+static uint8_t ShowerPower; 		// Power to be applied. Controlled by TRIAC_SetPower() and TRIAC_GetPower()
+
+//----------------------------------------------
+// State machine
+static uint32_t LastEdgeTime;		// Time that last edge occurred
+static uint32_t EdgeTime;			// Time that current Edge occurred
+static uint8_t PulseState = 1;		// State machine control inside TRIAC_Pulse function
+static uint8_t TestState = 1;		// State machine control inside TRIAC_Test function
+
+//----------------------------------------------
+// Lost edges Error
+static uint32_t LostEdgeCounter = 0;	// Increments when a lost of edge is detected
+#define MAX_LOST_EDGE 100;				// Maximum of lost edges to Generates an error
+
+//----------------------------------------------
+// Triac Test
+static uint32_t TestTriacCount = 0;		// Pulse counter - It counts how many edges to perform triac test function
+static uint8_t  TestTriac = 0; 	 		// Flag to control Triac test (1 == TRUE time to perform a test / 0 == FALSE do not perform a test )
+#define TRIAC_TEST_COUNT_MAX 240		// Triac Test Pulses - Code will perform a triac test when TestTriacCount reaches this value (1/60)*pulses=time -> Ex (1/60)*240 = 4s
+
+//----------------------------------------------
+// For 60Hz one cycle is 16.67ms
+#define EDGE_TIME_MIN 16000			// 16.000 ms
+#define EDGE_TIME_MAX 18000			// 18.000 ms
+#define HALF_CYCLE 8333				// 8.300 ms
+#define PULSE_LENGHT 100			// 0.1 ms - controls pulse lenght inside TRIAC_Pulse function
+
+//----------------------------------------------
+// Table that converts Tric Power in delay for the timer that controls TRIAC_Pulse function
+const uint32_t TRIAC_POWER_TABLE[101] =
+{
+
+	0,		// 00 %
+	651,	// 01 %
+	651,	// 02 %
+	842,	// 03 %
+	998,	// 04 %
+	1134,	// 05 %
+	1256,	// 06 %
+	1368,	// 07 %
+	1472,	// 08 %
+	1570,	// 09 %
+	1662,	// 10 %
+	1751,	// 11 %
+	1835,	// 12 %
+	1917,	// 13 %
+	1996,	// 14 %
+	2072,	// 15 %
+	2147,	// 16 %
+	2219,	// 17 %
+	2290,	// 18 %
+	2359,	// 19 %
+	2426,	// 20 %
+	2493,	// 21 %
+	2558,	// 22 %
+	2622,	// 23 %
+	2685,	// 24 %
+	2747,	// 25 %
+	2808,	// 26 %
+	2869,	// 27 %
+	2929,	// 28 %
+	2988,	// 29 %
+	3046,	// 30 %
+	3104,	// 31 %
+	3161,	// 32 %
+	3218,	// 33 %
+	3275,	// 34 %
+	3331,	// 35 %
+	3386,	// 36 %
+	3441,	// 37 %
+	3496,	// 38 %
+	3551,	// 39 %
+	3605,	// 40 %
+	3660,	// 41 %
+	3714,	// 42 %
+	3767,	// 43 %
+	3821,	// 44 %
+	3874,	// 45 %
+	3928,	// 46 %
+	3981,	// 47 %
+	4034,	// 48 %
+	4087,	// 49 %
+	4140,	// 50 %
+	4193,	// 51 %
+	4246,	// 52 %
+	4299,	// 53 %
+	4352,	// 54 %
+	4406,	// 55 %
+	4459,	// 56 %
+	4512,	// 57 %
+	4566,	// 58 %
+	4620,	// 59 %
+	4674,	// 60 %
+	4728,	// 61 %
+	4782,	// 62 %
+	4837,	// 63 %
+	4946,	// 64 %
+	5002,	// 65 %
+	5058,	// 66 %
+	5059,	// 67 %
+	5115,	// 68 %
+	5172,	// 69 %
+	5229,	// 70 %
+	5287,	// 71 %
+	5346,	// 72 %
+	5405,	// 73 %
+	5465,	// 74 %
+	5525,	// 75 %
+	5586,	// 76 %
+	5648,	// 77 %
+	5711,	// 78 %
+	5775,	// 79 %
+	5841,	// 80 %
+	5907,	// 81 %
+	5975,	// 82 %
+	6044,	// 83 %
+	6114,	// 84 %
+	6187,	// 85 %
+	6261,	// 86 %
+	6337,	// 87 %
+	6416,	// 88 %
+	6498,	// 89 %
+	6583,	// 90 %
+	6671,	// 91 %
+	6764,	// 92 %
+	6862,	// 93 %
+	6966,	// 94 %
+	7077,	// 95 %
+	7199,	// 96 %
+	7335,	// 97 %
+	7491,	// 98 %
+	7682,	// 99 %
+	7958,	// 100 %
+};
+
+//==================================================================================================
+//
+//==================================================================================================
+static void TRIAC_PinOut (void)
+{
+	GPIO_InitTypeDef GPIO_InitStructure;
+
+	/* GPIOF Periph clock enable */
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOF, ENABLE);
+
+	/* Configure PF7 and PF6 in output pushpull mode */
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_7 | GPIO_Pin_6;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+	GPIO_Init(GPIOF, &GPIO_InitStructure);
+
+	GPIO_ResetBits(GPIOF, GPIO_Pin_7 | GPIO_Pin_6 );
+
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+static void TRIAC_PinDebug (void)
+{
+	GPIO_InitTypeDef GPIO_InitStructure;
+
+	/* GPIOC Periph clock enable */
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOA, ENABLE);
+
+	/* Configure PA15 in output pushpull mode */
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_15;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+	GPIO_ResetBits(GPIOA, GPIO_Pin_15 );
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+static void TRIAC_PinZC (void)
+{
+	GPIO_InitTypeDef   GPIO_InitStructure;
+	EXTI_InitTypeDef   EXTI_InitStructure;
+	NVIC_InitTypeDef   NVIC_InitStructure;
+
+	/* Enable GPIOC clock - AHB: advanced high-performance bus*/
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOC, ENABLE);
+
+	/* Configure PC13 pin as input floating */
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_13;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP;
+	GPIO_Init(GPIOC, &GPIO_InitStructure);
+
+	/* Enable SYSCFG clock - APB: advanced peripheral bus*/
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_SYSCFG, ENABLE);
+
+	/* Connect EXTI13 Line to PC13 pin */
+	SYSCFG_EXTILineConfig(EXTI_PortSourceGPIOC, EXTI_PinSource13);
+
+	/* Configure EXTI13 line */
+	EXTI_InitStructure.EXTI_Line = EXTI_Line13;
+	EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
+	EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising;
+	EXTI_InitStructure.EXTI_LineCmd = ENABLE;
+	EXTI_Init(&EXTI_InitStructure);
+
+	/* Enable and set EXTI13 Interrupt */
+	NVIC_InitStructure.NVIC_IRQChannel = EXTI4_15_IRQn;
+	NVIC_InitStructure.NVIC_IRQChannelPriority = 0x00;
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&NVIC_InitStructure);
+}
+
+//==================================================================================================
+// TIM 14 is used to Check if the times between edges is right for 60Hz
+//==================================================================================================
+static void TRIAC_TIM14(void)
+{
+	TIM_TimeBaseInitTypeDef timerInitStructure;
+
+	/* Timer Configuration */
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM14, ENABLE);
+
+	timerInitStructure.TIM_Prescaler = 48;   // 48000000 / 48  = 10000  -> 1us
+	timerInitStructure.TIM_CounterMode = TIM_CounterMode_Up;
+	timerInitStructure.TIM_Period = 0xFFFF;   // Counter max number
+	timerInitStructure.TIM_ClockDivision = TIM_CKD_DIV1;
+	timerInitStructure.TIM_RepetitionCounter = 0;
+	TIM_TimeBaseInit(TIM14, &timerInitStructure);
+	TIM_Cmd(TIM14, ENABLE);
+
+	TIM_SetCounter(TIM14, 0);
+
+	LastEdgeTime = 0;
+	EdgeTime = 0;
+}
+
+//==================================================================================================
+// TIM 17 is used for the pulse function
+//==================================================================================================
+static void TRIAC_TIM17(void)
+{
+	TIM_TimeBaseInitTypeDef timerInitStructure;
+    NVIC_InitTypeDef nvicStructure;
+
+	/* Timer Configuration */
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM17, ENABLE);
+
+	timerInitStructure.TIM_Prescaler = 48;   // 48000000 / 48  = 1000000
+	timerInitStructure.TIM_CounterMode = TIM_CounterMode_Up;
+	timerInitStructure.TIM_Period = HALF_CYCLE;   // Counter max number
+	timerInitStructure.TIM_ClockDivision = TIM_CKD_DIV1;
+	timerInitStructure.TIM_RepetitionCounter = 0;
+	TIM_TimeBaseInit(TIM17, &timerInitStructure);
+	TIM_Cmd(TIM17, ENABLE);
+
+	TIM_SetCounter(TIM17, 0);
+
+	TIM_ITConfig(TIM17, TIM_IT_CC1, ENABLE);
+
+    nvicStructure.NVIC_IRQChannel = TIM17_IRQn;
+    nvicStructure.NVIC_IRQChannelPriority = 0;
+    nvicStructure.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_Init(&nvicStructure);
+
+    NVIC_DisableIRQ (TIM17_IRQn);
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void TRIAC_Init(void)
+{
+	TRIAC_PinOut();
+	TRIAC_PinZC();
+	TRIAC_TIM17();
+	TRIAC_TIM14();
+	TRIAC_PinDebug();
+
+	GPIO_WriteBit(GPIOF,GPIO_Pin_7, 1); //Protection Triac
+
+	TRIAC_EnableIRQ();
+
+	ShowerPower = 0;
+}
+
+//==================================================================================================
+// Set TRIAC Power
+//==================================================================================================
+void TRIAC_SetPower(uint8_t Power)
+{
+	ShowerPower = Power;
+}
+
+//==================================================================================================
+// Get current TRIAC Power
+//==================================================================================================
+uint8_t TRIAC_GetPower(void)
+{
+	return ShowerPower;
+}
+
+//==================================================================================================
+// Checks if times between edges is right for 60Hz (Returns TRUE if time is right and FALSE if not)
+//==================================================================================================
+static uint8_t TRIAC_Check60Hz(void)
+{
+	uint32_t Delta;
+
+	EdgeTime = TIM_GetCounter(TIM14);
+	Delta = EdgeTime - LastEdgeTime;
+
+	if(Delta > EDGE_TIME_MIN)
+	{
+		TIM_SetCounter(TIM14, 0);
+		LastEdgeTime = TIM_GetCounter(TIM14);
+
+		// Check if interruption time is right. This is done to avoid a false edge
+		if( (Delta > EDGE_TIME_MIN) && (Delta < EDGE_TIME_MAX) )
+		{
+			// For debug purposes
+			debug = ~debug;
+			GPIO_WriteBit(GPIOA, GPIO_Pin_15, debug);
+			
+			return TRUE;
+
+		}
+		else
+		{
+			LostEdgeCounter++;
+		}
+	}
+	else
+	{
+		LostEdgeCounter++;
+	}
+
+	// TODO if(LostEdgeCounter > MAX_LOST_EDGE) then E8
+
+	return FALSE;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+static void TRIAC_Control(void)
+{
+	if( TestTriacCount++ < TRIAC_TEST_COUNT_MAX )
+	{
+		if( ShowerPower > 0)
+		{
+			TestTriac = 0;
+			TIM_SetCounter(TIM17, TRIAC_POWER_TABLE[ShowerPower] );
+			TIM_ClearITPendingBit(TIM17, TIM_IT_CC1);
+			NVIC_EnableIRQ (TIM17_IRQn);
+		}
+	}
+	else
+	{
+		TestTriacCount = 0;
+		TestTriac = 1;
+		TIM_SetCounter(TIM17, 1000 );
+		TIM_ClearITPendingBit(TIM17, TIM_IT_CC1);
+		NVIC_EnableIRQ (TIM17_IRQn);
+	}
+}
+
+//==================================================================================================
+// Called every time Zero Crossing pin gets a rising edge
+//==================================================================================================
+void EXTI4_15_IRQHandler (void)
+{
+	if( TRIAC_Check60Hz() == TRUE )
+	{
+		TRIAC_Control();
+	}
+
+	// TODO - Protecao de vazao
+
+	// TODO - Protecao de temperatura
+
+	EXTI->PR |= 0x00000100;		// Clear the IRQ pending flag
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+static void TRIAC_Pulse ()
+{
+	switch (PulseState)
+	{	
+		//---------------------------------------------------
+		// First Pulse On
+		//	  +--
+		//    |
+		// ___|
+		case 1: 
+		{
+			PulseState = 2;
+			GPIO_WriteBit(GPIOF,GPIO_Pin_6, 1);
+			TIM_SetCounter(TIM17, HALF_CYCLE - PULSE_LENGHT );
+			break;
+		}
+		//---------------------------------------------------		
+		// First Pulse Off
+		//	  +--+
+		//    |  |
+		// ___|  |______
+		case 2: 
+		{
+			PulseState = 3;
+			GPIO_WriteBit(GPIOF,GPIO_Pin_6, 0);
+			TIM_SetCounter(TIM17, PULSE_LENGHT );
+			break;
+		}
+		//---------------------------------------------------		
+		// Second Pulse On
+		//	  +--+         +--
+		//    |  |         |
+		// ___|  |_________|
+		case 3: 
+		{
+			PulseState = 4;
+			GPIO_WriteBit(GPIOF,GPIO_Pin_6, 1);
+			TIM_SetCounter(TIM17, HALF_CYCLE - PULSE_LENGHT );
+			break;
+		}
+		//---------------------------------------------------		
+		// Second Pulse Off
+		//	  +--+         +--+
+		//    |  |         |  |
+		// ___|  |_________|  |_____
+		case 4: 
+		{
+			PulseState = 1;
+			GPIO_WriteBit(GPIOF,GPIO_Pin_6, 0);
+			TIM_SetCounter(TIM17, PULSE_LENGHT );
+			NVIC_DisableIRQ (TIM17_IRQn);
+			break;
+		}
+		//---------------------------------------------------	
+		default:
+		{
+			NVIC_DisableIRQ (TIM17_IRQn);
+			break;
+		}
+	}
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+static void TRIAC_Test ()
+{
+	switch (TestState)
+	{
+		//---------------------------------------------------	
+		// Test Triac 1
+		case 1: 
+		{
+			TestState = 2;
+			GPIO_WriteBit(GPIOF,GPIO_Pin_7, 1); // Protection Triac On
+			GPIO_WriteBit(GPIOF,GPIO_Pin_6, 0); // Triac 1 Off
+
+			// TODO - Teste Protection Pin
+
+			GPIO_WriteBit(GPIOF,GPIO_Pin_7, 0); // Protection Triac Off
+			GPIO_WriteBit(GPIOF,GPIO_Pin_6, 0); // Triac 1 Off
+
+			break;
+		}
+		//---------------------------------------------------	
+		// Test Triac 2 (Protection)
+		case 2: 
+		{
+			TestState = 1;
+			GPIO_WriteBit(GPIOF,GPIO_Pin_7, 0); // Protection Triac Off
+			GPIO_WriteBit(GPIOF,GPIO_Pin_6, 1); // Triac 1 On
+
+			// TODO - Teste Protection Pin
+
+			GPIO_WriteBit(GPIOF,GPIO_Pin_7, 1); // Protection Triac
+			GPIO_WriteBit(GPIOF,GPIO_Pin_6, 0); // Triac 1 Off
+
+			NVIC_DisableIRQ (TIM17_IRQn);
+			break;
+		}
+		//---------------------------------------------------	
+		default:
+		{
+			TestState = 1;
+			NVIC_DisableIRQ (TIM17_IRQn);
+			break;
+		}
+	}
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void TIM17_IRQHandler ()
+{
+    if (TIM_GetITStatus(TIM17, TIM_IT_CC1) != RESET)
+    {
+        TIM_ClearITPendingBit(TIM17, TIM_IT_CC1);
+
+		if( TestTriac == 1 ) 
+		{
+			TRIAC_Test();
+		}
+		else
+		{
+			TRIAC_Pulse();			
+		}
+	}
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void TRIAC_EnableIRQ (void)
+{
+	NVIC_EnableIRQ (EXTI4_15_IRQn); // ZC
+	NVIC_EnableIRQ (TIM17_IRQn);    // Pulse Timer
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void TRIAC_DisableIRQ (void)
+{
+	NVIC_DisableIRQ (EXTI4_15_IRQn); // ZC
+	NVIC_DisableIRQ (TIM17_IRQn);    // Pulse Timer
+}
+
+
+
+

@@ -1,0 +1,1211 @@
+/* Common includes */
+#include "main.h"
+#include "string.h"
+#include "stdlib.h"
+
+/* FreeRTOS includes */
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+#include "timers.h"
+
+/* drv includes */
+#include "User.h"
+#include "Display.h"
+#include "LED.h"
+#include "Bluetooth.h"
+#include "printf_lib.h"
+#include "IrDA.h"
+#include "NTC.h"
+#include "Voltmeter.h"
+#include "Flowmeter.h"
+#include "Triac.h"
+#include "Buzzer.h"
+#include "Debug.h"
+#include "RTCC.h"
+#include "Controller.h"
+#include "AD.h"
+#include "Touch.h"
+#include "eeprom.h"
+#include "Screen.h"
+
+/* Virtual address defined by the user: 0xFFFF value is prohibited */
+uint16_t VirtAddVarTab[NB_OF_VAR] = {0x5555, 0x6666, 0x7777};
+static uint8_t FlashErase = 0;
+
+//-------------------------------------------
+// Flowmeter Test variables
+uint8_t LiberateFlowmeter = 0;
+
+//-------------------------------------------
+// Debug variables
+uint16_t print1=0, print2=0, print3=0, print4=0, print5=0,
+		 print6=0, print7=0, print8=0, print9=0, print10=0;
+
+//-------------------------------------------
+// Debug Defines
+#define _DEBUG_
+#define _FAST_DEBUG_
+//#define _DEBUG_STR_
+
+#if defined(_DEBUG_) || defined(_DEBUG_STR_)
+	char str_debug[40];
+	uint8_t debug_show = 4;
+    #define DEBUG_MAX 4
+#endif
+
+//-------------------------------------------
+// TOUCH Defines
+//#define _TOUCH_DEBUG_
+#define _TOUCH_
+
+//-------------------------------------------
+// Voltmeter Defines
+//#define _VOLTMETER_
+
+//-------------------------------------------
+// Shower Logs Defines
+//#define _LOGS_
+
+//-------------------------------------------
+// Shower Time Defines
+#define _SHOWERTIME_
+
+//-------------------------------------------
+// Users shower configuration
+uint8_t UserIndex; 	// Index of the current user
+USER 	User[6]; 	// User settings. User[0] is U6, User[1] is U1, ... , User[5] is U5
+
+//-------------------------------------------
+// Tasks Handlers
+xTaskHandle xHandle_10msTask 	= NULL;
+xTaskHandle xHandle_ScreenTask  = NULL;
+xTaskHandle xHandle_CommandsTask= NULL;
+xTaskHandle xHandle_BuzzerTask 	= NULL;
+xTaskHandle xHandle_PIDTask 	= NULL;
+xTaskHandle xHandle_TriacControllerTask = NULL;
+
+#ifdef _VOLTMETER_
+xTaskHandle xHandle_VoltmeterTask = NULL;//
+#endif
+
+#ifdef _TOUCH_
+	xTaskHandle xHandle_TouchTask = NULL;
+#endif
+
+#ifdef _DEBUG_
+	xTaskHandle xHandle_DebugTask = NULL;
+#endif
+
+#ifdef _LOGS_
+	xTaskHandle xHandle_ShowerLogsTask = NULL;//
+#endif
+
+#ifdef _SHOWERTIME_
+	xTaskHandle xHandle_ShowerTimeTask = NULL;//
+#endif
+
+//-------------------------------------------
+// Tasks Code
+static void v10msTask(void *pvParameters);
+static void vScreenTask(void *pvParameters);
+static void vTriacControllerTask(void *pvParameters);
+static void vCommandsTask(void *pvParameters);
+static void vBuzzerTask(void *pvParameters);
+static void vPIDTask(void *pvParameters);
+
+#ifdef _VOLTMETER_
+static void vVoltmeterTask(void *pvParameters); // Voltmeter
+#endif
+
+#ifdef _TOUCH_
+	static void vTouchTask(void *pvParameters); // Capacitive touch screem
+#endif
+
+#ifdef _DEBUG_
+	static void vDebugTask(void *pvParameters); // Debug
+#endif
+
+#ifdef _LOGS_
+	static void vShowerLogsTask(void *pvParameters); // Shower logs
+#endif
+
+#ifdef _SHOWERTIME_
+	static void vShowerTimeTask(void *pvParameters); // Shower logs
+#endif
+
+//-------------------------------------------
+//
+xQueueHandle CommandsQueueHandler;
+#define COMMANDS_QUEUE_SIZE 1
+
+//-------------------------------------------
+// Warnings
+// 	(defines in "Makefife")
+#if(defined VERSION_MAJOR && VERSION_MAJOR == 0) && (defined VERSION_MINOR && VERSION_MINOR == 0)
+	#warning "Verify if firmware version in Makefile is updated (VERSION_MAJOR, VERSION_MINOR, VERSION_BUILD)"
+#endif
+
+#if(defined MY_SHOWER)
+	#warning "MyShower Compilation"
+#endif
+
+#if(defined SHOWER_SHOW)
+	#warning "ShowerShow Compilation"
+#endif
+
+#if(defined _127V)
+	#warning "Bath voltage is 127V"
+#else // _220V
+	#warning "Bath voltage is 220V"
+#endif
+
+//====================================================================================================
+// Initializes all user variables
+//====================================================================================================
+void Init_Shower_Variables();
+
+//====================================================================================================
+// Main Function
+//====================================================================================================
+int main(void)
+{
+
+#ifdef _DEBUG_STR_
+	sprintf_lib(str_debug, "Shower Started - version %d.%d.%d\r\n", VERSION_MAJOR, VERSION_MINOR, VERSION_BUILD); // These defines are in makefile
+	Debug_Write(str_debug, strlen(str_debug));
+#endif
+
+	SystemInit();  			// CMSIS SystemInit clocks and PLLs
+	Init_Shower_Variables();// ShowerConfiguration
+
+	RTCC_Init();
+	Bluetooth_Init();
+	NTC_Init();
+	Voltmeter_Init();
+	TRIAC_Init();
+
+	FLASH_Unlock(); // Unlock the Flash Program Erase controller
+	EE_Init();		// Initializes Emulated EEPROM
+
+	Flowmeter_ForceGetFlow(0);
+
+	/*// ShowerConfiguration
+	User_Init_Shower_Variables(	SHOWER_MODE_TEMPERATURE,
+								LED_AUTO,
+								LED_COLOR_WHITE,
+								DEFAULT_SETPOINT,
+								0,
+								BUZZER_ENABLED,
+								TEMPERATURE_LIMIT_ON);
+
+
+	UserIndex = 1; //User 1 is the initial user (Default User)
+
+	CommandsQueueHandler = xQueueCreate(COMMANDS_QUEUE_SIZE, sizeof(uint32_t));
+*/
+
+	//-----------------------------------------------------------------------------
+	// Buzzer Task
+	//-----------------------------------------------------------------------------
+    xTaskCreate(vBuzzerTask,
+    			"BuzzerTask",
+				configMINIMAL_STACK_SIZE,
+				(void *) NULL,
+				tskIDLE_PRIORITY,
+				xHandle_BuzzerTask);
+
+	//-----------------------------------------------------------------------------
+	// User Interface Task (Display - LED - Flowmeter)
+	//-----------------------------------------------------------------------------
+    xTaskCreate(v10msTask,
+    			"10msTask",
+				configMINIMAL_STACK_SIZE,
+				(void *) NULL,
+				tskIDLE_PRIORITY+1,
+				xHandle_10msTask);
+
+	//-----------------------------------------------------------------------------
+	// Screen Task
+	//-----------------------------------------------------------------------------
+    xTaskCreate(vScreenTask,
+    			"ScreenTask",
+				configMINIMAL_STACK_SIZE,
+				(void *) NULL,
+				tskIDLE_PRIORITY,
+				xHandle_ScreenTask);
+
+	//-----------------------------------------------------------------------------
+	// Commands Task
+	//-----------------------------------------------------------------------------
+	xTaskCreate(vCommandsTask,
+    			"CommandsTask",
+				configMINIMAL_STACK_SIZE,
+				(void *) NULL,
+				tskIDLE_PRIORITY,
+				xHandle_CommandsTask);
+
+	//-----------------------------------------------------------------------------
+	// Touch Task
+	//-----------------------------------------------------------------------------
+#ifdef _TOUCH_
+    xTaskCreate(vTouchTask,
+    			"TouchTask",
+				configMINIMAL_STACK_SIZE,
+				(void *) NULL,
+				tskIDLE_PRIORITY + 1,
+				xHandle_TouchTask);
+#endif // _TOUCH_
+
+	//-----------------------------------------------------------------------------
+	// Debug Task
+	//-----------------------------------------------------------------------------
+#ifdef _DEBUG_
+	xTaskCreate(vDebugTask,
+    			"DebugTask",
+    			configMINIMAL_STACK_SIZE * 3,
+				(void *) NULL,
+				tskIDLE_PRIORITY,
+				xHandle_DebugTask);
+#endif // _DEBUG_
+
+	//-----------------------------------------------------------------------------
+	// PID Task
+	//-----------------------------------------------------------------------------
+	xTaskCreate(vPIDTask,
+    			"PIDTask",
+    			configMINIMAL_STACK_SIZE,
+				(void *) NULL,
+				tskIDLE_PRIORITY,
+				xHandle_PIDTask);
+
+	//-----------------------------------------------------------------------------
+	// Triac Controller Task
+	//-----------------------------------------------------------------------------
+	xTaskCreate(vTriacControllerTask,
+    			"TriacControllerTask",
+				configMINIMAL_STACK_SIZE,
+				(void *) NULL,
+				tskIDLE_PRIORITY + 2,
+				xHandle_TriacControllerTask);
+
+	//-----------------------------------------------------------------------------
+	// Voltmeter Task
+	//-----------------------------------------------------------------------------
+#ifdef _VOLTMETER_
+	xTaskCreate(vVoltmeterTask,
+    			"VoltmeterTask",
+				configMINIMAL_STACK_SIZE,
+				(void *) NULL,
+				tskIDLE_PRIORITY + 1,
+				xHandle_VoltmeterTask);
+#endif // _VOLTMETER_
+
+	//-----------------------------------------------------------------------------
+	// Shower Logs Task
+	//-----------------------------------------------------------------------------
+#ifdef _LOGS_
+	xTaskCreate(vShowerLogsTask,
+    			"ShowerLogsTask",
+				configMINIMAL_STACK_SIZE,
+				(void *) NULL,
+				tskIDLE_PRIORITY,
+				xHandle_ShowerLogsTask);
+#endif // _LOGS_
+
+	//-----------------------------------------------------------------------------
+	// Shower Time Task
+	//-----------------------------------------------------------------------------
+#ifdef _SHOWERTIME_
+	xTaskCreate(vShowerTimeTask,
+    			"ShowerTimeTask",
+				configMINIMAL_STACK_SIZE,
+				(void *) NULL,
+				tskIDLE_PRIORITY,
+				xHandle_ShowerTimeTask);
+#endif // _SHOWERTIME_
+
+	//-----------------------------------------------------------------------------
+	// Scheduler
+	//-----------------------------------------------------------------------------
+    vTaskStartScheduler();
+
+    return 0;
+}
+
+//====================================================================================================
+// Initializes all user variables
+//====================================================================================================
+void Init_Shower_Variables()
+{
+	uint8_t i;
+
+	UserIndex = 1; //User 6 is the initial user (Default User)
+
+	for(i=0; i<6; i++)
+	{
+		User[i].ShowerMode 		    = SHOWER_MODE_TEMPERATURE;
+		User[i].LedMode 			= LED_AUTO;
+		User[i].LedColor			= LED_COLOR_WHITE;
+		User[i].TemperatureSetPoint = DEFAULT_SETPOINT;
+		User[i].PowerSetPoint 	    = 0;
+		User[i].Buzzer				= BUZZER_ENABLED;
+		User[i].MaxTemperatureLimit = TEMPERATURE_LIMIT_ON;
+	}
+
+	CommandsQueueHandler = xQueueCreate(COMMANDS_QUEUE_SIZE, sizeof(uint32_t));
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+#ifdef _SHOWERTIME_
+static void vShowerTimeTask(void *pvParameters)
+{
+	RTCC_TimeDateTypeDef ShowerTimeDateInit;
+	RTCC_TimeDateTypeDef ShowerTimeDate;
+
+	ShowerTimeDateInit.WeekDay	= RTC_Weekday_Monday;
+	ShowerTimeDateInit.Date		= 1;
+	ShowerTimeDateInit.Month	= RTC_Month_January;
+	ShowerTimeDateInit.Year		= 15;
+	ShowerTimeDateInit.Hours	= 0;
+	ShowerTimeDateInit.Minutes	= 0;
+	ShowerTimeDateInit.Seconds	= 0;
+
+	RTCC_SetTimeDate(ShowerTimeDateInit);
+
+	for (;;)
+	{
+		RTCC_GetTimeDate(&ShowerTimeDate);
+		print1 = ShowerTimeDate.WeekDay;
+		print2 = ShowerTimeDate.Date;
+		print3 = ShowerTimeDate.Month;
+		print4 = ShowerTimeDate.Year;
+		print8 = ShowerTimeDate.Hours;
+		print9 = ShowerTimeDate.Minutes;
+		print10 = ShowerTimeDate.Seconds;
+
+		vTaskDelay(200);
+	}
+}
+#endif // _SHOWERTIME_
+
+//====================================================================================================
+//
+//====================================================================================================
+#ifdef _LOGS_
+static void vShowerLogsTask(void *pvParameters)
+{
+	//static uint16_t a = 0, b = 0; // Teste da EEPROM emulada
+
+	uint16_t VarDataTab[12] = {0, 0, 0, 0,  0, 0, 0, 0,  0, 0, 0, 0};
+
+	for(;;)
+	{
+		// Write variables on Flash Virtual Address
+		EE_WriteVariable(EEPROM_ADDRESS_LITERS, 1111);
+		EE_WriteVariable(EEPROM_ADDRESS_HOUERS, 2222);
+		EE_WriteVariable(EEPROM_ADDRESS_NUMBER, 3333);
+
+		EE_WriteVariable(EEPROM_ADDRESS_MAX_POT, 4444);
+		EE_WriteVariable(EEPROM_ADDRESS_MIN_POT, 5555);
+		EE_WriteVariable(EEPROM_ADDRESS_MID_POT, 6666);
+
+		EE_WriteVariable(EEPROM_ADDRESS_MAX_IN_TEMP, 7777);
+		EE_WriteVariable(EEPROM_ADDRESS_MIN_IN_TEMP, 8888);
+		EE_WriteVariable(EEPROM_ADDRESS_MID_IN_TEMP, 9999);
+
+		EE_WriteVariable(EEPROM_ADDRESS_MAX_OUT_TEMP, 1100);
+		EE_WriteVariable(EEPROM_ADDRESS_MIN_OUT_TEMP, 2200);
+		EE_WriteVariable(EEPROM_ADDRESS_MID_OUT_TEMP, 3300);
+
+		// Reading variables from Flash Virtual Address and storing in VarDataTab[] vector
+		EE_ReadVariable(EEPROM_ADDRESS_LITERS, &VarDataTab[0]);
+		EE_ReadVariable(EEPROM_ADDRESS_HOUERS, &VarDataTab[1]);
+		EE_ReadVariable(EEPROM_ADDRESS_NUMBER, &VarDataTab[2]);
+
+		EE_ReadVariable(EEPROM_ADDRESS_MAX_POT, &VarDataTab[3]);
+		EE_ReadVariable(EEPROM_ADDRESS_MIN_POT, &VarDataTab[4]);
+		EE_ReadVariable(EEPROM_ADDRESS_MID_POT, &VarDataTab[5]);
+
+		EE_ReadVariable(EEPROM_ADDRESS_MAX_IN_TEMP, &VarDataTab[6]);
+		EE_ReadVariable(EEPROM_ADDRESS_MIN_IN_TEMP, &VarDataTab[7]);
+		EE_ReadVariable(EEPROM_ADDRESS_MID_IN_TEMP, &VarDataTab[8]);
+
+		EE_ReadVariable(EEPROM_ADDRESS_MAX_OUT_TEMP, &VarDataTab[9]);
+		EE_ReadVariable(EEPROM_ADDRESS_MIN_OUT_TEMP, &VarDataTab[10]);
+		EE_ReadVariable(EEPROM_ADDRESS_MID_OUT_TEMP, &VarDataTab[11]);
+
+/*	// Teste da EEPROM emulada
+		EE_ReadVariable(EEPROM_ADDRESS_TEST, &a);
+		print1 = a;
+
+		for(;;)
+		{
+			a++;
+			if((a == 0xFFFF) || (FlashErase == 1))
+			{
+				a = 0;
+				b++;
+			}
+			EE_WriteVariable(EEPROM_ADDRESS_TEST, a);
+			EE_ReadVariable(EEPROM_ADDRESS_TEST, &a);
+
+			//print2 = VarDataTab[1];
+			//print3 = VarDataTab[2];
+			//print4 = VarDataTab[3];
+			//print5 = VarDataTab[4];
+			//print6 = VarDataTab[5];
+			//print7 = VarDataTab[6];
+			//print8 = VarDataTab[7];
+			print9 = b;
+			print10 = a;
+
+			vTaskDelay(100);
+		}
+*/
+
+		vTaskDelay(100);
+	}
+
+	vTaskDelete(NULL);
+}
+#endif // _LOGS_
+
+//====================================================================================================
+//
+//====================================================================================================
+#ifdef _VOLTMETER_
+static void vVoltmeterTask(void *pvParameters)
+{
+	uint16_t ADValue = 0;
+	uint8_t  VoltmeterState = 0;
+	uint16_t VoltValueInitial[3];
+	uint8_t  i;
+	uint8_t  InitVector = 0;
+	uint16_t VoltVectorIndex = 0;
+	uint32_t VoltValue = 0;
+
+
+	//uint16_t *VoltVectorAD;
+	//uint16_t VoltVectorIndex = 0;
+	//uint32_t VoltValueSum = 0;
+
+	//uint16_t i;
+	//uint8_t initVector = 0;
+
+	//for(i = 0; i <= 3; i++) VoltValueInitial[i] = 0; // Clear vector values
+
+	for (;;)
+	{
+		/*
+		if(ADValue > 50)
+		{
+			//initVector = 1;
+				if (initVector);
+			VoltVectorAD[VoltVectorIndex++] = ADValue;
+			//VoltVectorIndex++;
+		}*/
+
+		ADValue = Voltmeter_GetVoltage();	//AD_GetValue(AD_VOLTMETER)
+		//if(ADValue <= 50) ADValue = 0;		//Valores cortados do semi ciclo negativo estão por volta de 30b no ADC
+		//print2 = AD_GetValue(AD_VOLTMETER);
+
+		//print1 = ADValue;
+
+		switch(VoltmeterState)
+		{
+			case 0://===============================================================
+				//Armazena as primeiras amostras
+
+				//print1 = VoltValueInitial[3];
+				for(i = 2; i > 0; i--)
+				{
+					VoltValueInitial[i] = VoltValueInitial[i-1];
+				}
+
+				VoltValueInitial[0] = ADValue;
+
+				//print1 = ADValue;
+
+				print1 = VoltValueInitial[0];
+				print2 = VoltValueInitial[1];
+				print3 = VoltValueInitial[2];
+				print4 = VoltValueInitial[2];
+				print5 = VoltValue;
+
+				VoltValue = 0;
+
+				if (!VoltValueInitial[3] ||
+					!VoltValueInitial[2] ||
+					!VoltValueInitial[1] ||
+					!VoltValueInitial[0])
+				{
+					VoltmeterState = 0;
+				}
+				else VoltmeterState = 0;
+
+				VoltVectorIndex = 0;
+			break;//================================================================
+
+			case 1://===============================================================
+				//Verifica se os primeiros valores não são nulos.
+				//Desta forma sabe-se que iniciou a senoide.
+
+				//print1 = 900;
+				for(i = 0; i <= 3; i++)
+				{
+					VoltValue += VoltValueInitial[i];
+				}
+
+				VoltValue /= 4;
+
+/*
+				print1 = VoltValueInitial[0];
+				print2 = VoltValueInitial[1];
+				print3 = VoltValueInitial[2];
+				print4 = VoltValueInitial[3];
+				print5 = VoltValue;
+*/
+
+				if(VoltValue > 50)
+				{
+					InitVector = 1; //Inicia a contagem do índice do vetor de amostras
+					VoltVectorIndex = 4;
+					//VoltValue = 0;	//Clear VoltValue
+					VoltmeterState = 2;
+				}
+				else VoltmeterState = 0;
+
+				VoltmeterState = 3;
+			break;//================================================================
+
+			case 2://===============================================================
+				if(ADValue >= VoltValue) VoltVectorIndex++;
+				if((ADValue < 50) && (VoltVectorIndex > 300)) VoltmeterState = 3;
+				else VoltmeterState = 2;
+			break;//================================================================
+
+			case 3://===============================================================
+				/*print1 = VoltValueInitial[0];
+				print2 = VoltValueInitial[1];
+				print3 = VoltValueInitial[2];
+				print4 = VoltValueInitial[3];
+				print5 = VoltValue;*/
+
+				VoltmeterState = 3;
+			break;//================================================================
+
+			default://==============================================================
+				VoltmeterState = 0;
+			break;//================================================================
+		}
+
+		vTaskDelay(10);
+	}
+	vTaskDelete(NULL);
+}
+#endif
+
+//====================================================================================================
+//
+//====================================================================================================
+static void vCommandsTask(void *pvParameters)
+{
+	uint32_t Data[COMMANDS_QUEUE_SIZE];
+
+	IrDA_Init(&CommandsQueueHandler);
+
+	for(;;)
+	{
+		xQueueReceive(CommandsQueueHandler, &Data, portMAX_DELAY);
+
+		if((Data[0]!=E1) && (Data[0]!=E2)) Buzzer_Beep(25, 1);
+
+		switch(Data[0])
+		{
+			//----------------------------------------------------------------------------------------------
+			case KEY_MENU:
+			{
+				Screen_Show(SCREEN_MENU);
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case KEY_UP:
+			{
+				switch(User[UserIndex].ShowerMode)
+				{
+					case SHOWER_MODE_POWER:
+					{
+						if(User[UserIndex].PowerSetPoint < 9)
+						{
+							User[UserIndex].PowerSetPoint++;
+						}
+						else
+						{
+							Buzzer_Beep(40, 3);
+						}
+
+						Screen_Show(SCREEN_POWER_SETPOINT);
+						break;
+					}
+					case SHOWER_MODE_TEMPERATURE:
+					{
+						if(User[UserIndex].TemperatureSetPoint < MAX_SETPOINT) // MAX_SETPOINT = 455
+						{
+							User[UserIndex].TemperatureSetPoint+=10;
+						}
+						else
+						{
+							Buzzer_Beep(40, 3);
+						}
+
+						Screen_Show(SCREEN_TEMPERATURE_SETPOINT);
+						break;
+					}
+					default:
+					{
+						Buzzer_Beep(500, 3);
+						break;
+					}
+				}
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case KEY_DOWN:
+			{
+
+				switch(User[UserIndex].ShowerMode)
+				{
+					case SHOWER_MODE_POWER:
+					{
+						if(User[UserIndex].PowerSetPoint > 0)
+						{
+							User[UserIndex].PowerSetPoint--;
+						}
+						else
+						{
+							Buzzer_Beep(40, 3);
+						}
+
+						Screen_Show(SCREEN_POWER_SETPOINT);
+						break;
+					}
+					case SHOWER_MODE_TEMPERATURE:
+					{
+						// TODO: Lower temperature must be equal to the inlet temperature
+						if(User[UserIndex].TemperatureSetPoint > MIN_SETPOINT)
+						{
+							User[UserIndex].TemperatureSetPoint-=10;
+						}
+						else
+						{
+							Buzzer_Beep(40, 3);
+						}
+
+						Screen_Show(SCREEN_TEMPERATURE_SETPOINT);
+						break;
+					}
+					default:
+					{
+						Buzzer_Beep(500, 3);
+						break;
+					}
+				}
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case KEY_USER:
+			{
+				if(UserIndex >= 5 )
+				{
+					UserIndex = 0;
+				}
+				else
+				{
+					UserIndex++;
+				}
+
+				Screen_Show(SCREEN_USER);
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case KEY_LED_OFF:
+			{
+				static uint8_t Last_LedMode;
+
+				if(User[UserIndex].LedMode != LED_OFF)
+				{
+					Last_LedMode = User[UserIndex].LedMode;
+					User[UserIndex].LedMode = LED_OFF;
+					Screen_Show(SCREEN_MESSAGE_LED_OFF);
+				}
+				else
+				{
+					User[UserIndex].LedMode = Last_LedMode;
+					Screen_Show(SCREEN_MESSAGE_LED_ON);
+				}
+
+				LED_SetMode(User[UserIndex].LedMode);
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case KEY_LED_AUTO:
+			{
+				if(User[UserIndex].LedMode == LED_POWER)
+				{
+					User[UserIndex].LedMode = LED_TEMPERATURE;
+					Screen_Show(SCREEN_MESSAGE_LED_TEMPERATURE);
+				}
+				else if(User[UserIndex].LedMode == LED_TEMPERATURE)
+				{
+					User[UserIndex].LedMode = LED_AUTO;
+					Screen_Show(SCREEN_MESSAGE_LED_AUTO);
+				}
+				else if(User[UserIndex].LedMode == LED_AUTO)
+				{
+					User[UserIndex].LedMode  = LED_FIXED;
+					User[UserIndex].LedColor = LED_GetColor();
+					LED_SetFixedColor(User[UserIndex].LedColor);
+
+					Screen_Show(SCREEN_MESSAGE_LED_FIXED);
+				}
+				else if(User[UserIndex].LedMode == LED_FIXED)
+				{
+					User[UserIndex].LedMode = LED_POWER;
+					Screen_Show(SCREEN_MESSAGE_LED_POWER);
+				}
+				else
+				{
+					Screen_Show(SCREEN_MESSAGE_LED_OFF);
+				}
+
+				LED_SetMode(User[UserIndex].LedMode);
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case KEY_BIP:
+			{
+				if(User[UserIndex].Buzzer == BUZZER_DISABLE)
+				{
+					User[UserIndex].Buzzer = BUZZER_ENABLED;
+					Screen_Show(SCREEN_MESSAGE_BIP_ON);
+					Buzzer_Control(BUZZER_ENABLED);
+				}
+				else
+				{
+					User[UserIndex].Buzzer = BUZZER_DISABLE;
+					Screen_Show(SCREEN_MESSAGE_BIP_OFF);
+					Buzzer_Control(BUZZER_DISABLE);
+				}
+
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case KEY_TEMPERATURE:
+			{
+				if(User[UserIndex].ShowerMode == SHOWER_MODE_POWER)
+				{
+					Controller_ResetPID();
+				}
+
+				User[UserIndex].ShowerMode = SHOWER_MODE_TEMPERATURE;
+				Screen_Show(SCREEN_TEMPERATURE);
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case KEY_POWER:
+			{
+				User[UserIndex].ShowerMode = SHOWER_MODE_POWER;
+				Screen_Show(SCREEN_POWER_SETPOINT);
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case KEY_TIMER:
+			{
+				Screen_Show(SCREEN_TIMER);
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case KEY_LITERS:
+			{
+				Screen_Show(SCREEN_LITERS);
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case A1:
+			{
+				// Desliga a leitura do fluxômetro e força um de fluxo
+				LiberateFlowmeter = 1;
+				Flowmeter_ForceGetFlow(350);
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case A3:
+			{
+				// Habilita a leitura do fluxômetro
+				LiberateFlowmeter = 0;
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case E1:
+			{
+				FlashErase = 1; // Clear Emulated EEPROM variables
+				break;
+			}
+
+			//----------------------------------------------------------------------------------------------
+			case E2:
+			{
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			default:
+			{
+				FlashErase = 0; // Enables writing on Emulated EEPROM
+				break;
+			}
+		}
+	}
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+static void vTriacControllerTask (void *pvParameters)
+{
+	uint8_t Power = 0;
+	//uint8_t State;
+
+	//enum {SHOWER_STARTED, SHOWER_FINISHED} TakingShower;
+	enum {CONTROLLER_ON, CONTROLLER_OFF, CONTROLLER_WAIT} State;
+	//enum {CONTROLLER_ON, CONTROLLER_OFF, CONTROLLER_WAIT};
+
+	//TakingShower = SHOWER_FINISHED;
+	State = CONTROLLER_OFF;
+	//Power = 0;
+
+	vTaskDelay(2000);
+
+	LED_Control(LED_DISABLE);
+
+	for(;;)
+	{
+		TRIAC_LostEdges();
+
+		//---------------------------------------------
+		// State Machine Control (Controlled by Water Flow)
+		switch(State)
+		{
+			//----------------------
+			case CONTROLLER_ON:
+			{
+				// If there isn't flow, turns LEDs off and go to CONTROLLER_WAIT state
+				if(Flowmeter_GetFlow() < FLOW_OFF) // FLOW_OFF = 150
+				{
+					LED_Control(LED_DISABLE); // Turn LEDs off
+					State = CONTROLLER_WAIT;
+				}
+				break;
+			}
+			//----------------------
+			case CONTROLLER_OFF:
+			{
+				// If there is flow...
+				if(Flowmeter_GetFlow() > FLOW_ON)
+				{
+					Buzzer_Beep(50,2);			// Give two BIPs
+					Controller_ResetPID(); 		// Reset PID
+					LED_Control(LED_ENABLED); 	// Turn LEDs on
+					Screen_Show(SCREEN_FLOW);	// Show flow in displays
+
+					//TakingShower = SHOWER_FINISHED;
+
+					State = CONTROLLER_ON; 		// Go to CONTROLLER_WAIT state
+				}
+				break;
+			}
+			//----------------------
+			case CONTROLLER_WAIT:
+			{
+				// TODO: implemetar logica para aguardar um tempo ate religar o controle isso é devido a energia já acumulada na resistencia
+				State = CONTROLLER_OFF;
+				break;
+			}
+			//----------------------
+			default:
+			{
+				State = CONTROLLER_OFF;
+				break;
+			}
+		}
+
+		//---------------------------------------------
+		// Shows flow variation
+		if(Flowmeter_GetFlowDerivative() > 0)
+		{
+			Screen_Show(SCREEN_FLOW);
+		}
+
+		//---------------------------------------------
+		// Apply power according to user configuration SHOWER_MODE_TEMPERATURE or SHOWER_MODE_POWER
+		if(State == CONTROLLER_ON)
+		{
+			if(User[UserIndex].ShowerMode == SHOWER_MODE_TEMPERATURE)
+			{
+
+				Screen_SetMainSubScreen(SCREEN_MAIN_TEMPERATURE);
+				Power = Controller_Task(User[UserIndex].TemperatureSetPoint);
+			}
+			else // SHOWER_MODE_POWER
+			{
+				Screen_SetMainSubScreen(SCREEN_MAIN_POWER);
+				Power = User[UserIndex].PowerSetPoint * 11;
+			}
+		}
+		else
+		{
+			Screen_SetMainSubScreen(SCREEN_MAIN_IDLE);
+			Power = 0;
+		}
+
+		//---------------------------------------------
+		// TODO: Protecao para sobre tensao
+
+		//---------------------------------------------
+		// Max Temperature Protection
+		if((NTC_GetWaterTemperature(TEMPERATURE_OUTLET) > MAX_TEMPERATURE) || (NTC_GetWaterTemperature(TEMPERATURE_RESISTANCE) > MAX_TEMPERATURE))
+		{
+			Power = 0;
+		}
+
+		//---------------------------------------------
+		// Set Triac power
+		TRIAC_SetPower(Power);
+
+		//---------------------------------------------
+		// Time delay for hysteresis
+		if(State ==  CONTROLLER_WAIT)
+		{
+			vTaskDelay(1000); // TODO: este delay vai depender da temperatura na resistencia.
+		}
+		else
+		{
+			vTaskDelay(100);
+		}
+	}
+
+	vTaskDelete(NULL);
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+static void vPIDTask(void *pvParameters)
+{
+	for (;;)
+	{
+		PID_Task();
+
+		vTaskDelay(150);
+	}
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+static void vBuzzerTask(void *pvParameters)
+{
+	Buzzer_Init();
+	vTaskDelay(50);
+	Buzzer_Beep(50,2);
+
+	for (;;)
+	{
+		Buzzer_Task();
+	}
+
+	vTaskDelete(NULL);
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+static void vScreenTask (void *pvParameters)
+{
+	Screen_Init();
+
+	for(;;)
+	{
+		Screen_Task(User[UserIndex].TemperatureSetPoint, User[UserIndex].PowerSetPoint, UserIndex);
+	}
+
+	vTaskDelete(NULL);
+}
+
+//====================================================================================================
+// User Interface Task (Display - LED - Flowmeter)
+//====================================================================================================
+static void v10msTask (void *pvParameters)
+{
+	uint8_t count = 0;
+
+	LED_Init();
+	LED_SetMode(User[UserIndex].LedMode);
+	LED_SetFixedColor(User[UserIndex].LedColor);
+
+	Display_Init();
+	Flowmeter_Init();
+
+	for (;;)
+	{
+		Display_Task();
+		LED_Task();
+
+		if(count > 10)
+		{
+			count = 0;
+			if(!LiberateFlowmeter) // Somente para teste. Tratado pelas chaves em "vCommandsTask"
+			{
+				Flowmeter_Task();
+			}
+		}
+
+		count++;
+
+		vTaskDelay(10);
+	}
+
+	vTaskDelete(NULL);
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+#ifdef _TOUCH_
+static void vTouchTask (void *pvParameters)
+{
+	TOUCH_Init(&CommandsQueueHandler);
+#ifdef _TOUCH_DEBUG_
+	Debug_Init();
+#endif
+
+	//extern int32_t MeanDeltaUp;
+	//extern int32_t MeanDeltaDown;
+
+	for (;;)
+	{
+		TOUCH_Task();
+
+#ifdef _TOUCH_DEBUG_
+		sprintf_lib(str_debug, "%d %d\n", AD_GetValue(AD_TOUCH_UP), AD_GetValue(AD_TOUCH_DOWN) );
+		Debug_Write(str_debug, strlen(str_debug));
+#endif
+
+		//sprintf_lib(str_debug, "%d %d 0 0 \n", MeanDeltaUp, MeanDeltaDown );
+		//Debug_Write(str_debug, strlen(str_debug));
+		//Bluetooth_Write(str_debug, strlen(str_debug));
+	}
+
+	vTaskDelete(NULL);
+}
+#endif // _TOUCH_
+
+//====================================================================================================
+//
+//====================================================================================================
+#ifdef _DEBUG_
+static void vDebugTask(void *pvParameters)
+{
+	#ifndef _FAST_DEBUG_
+		static uint16_t i = 0;
+	#endif
+
+		Debug_Init();
+
+	for(;;)
+	{
+
+		#ifdef _FAST_DEBUG_
+			sprintf_lib(str_debug, "%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\n", print1, print2, print3, print4, print5, print6, print7, print8, print9, print10);//AD_VOLTAGE_REFERENCE
+			Debug_Write(str_debug, strlen(str_debug));
+
+		#else
+			sprintf_lib(str_debug, "%d %d\n", AD_GetValue(AD_VOLTAGE_REFERENCE), VoltValue[i++]));//AD_VOLTAGE_REFERENCE
+			sprintf_lib(str_debug, "%d\n",  VoltVectorAD[i++]);//AD_VOLTAGE_REFERENCE
+			Debug_Write(str_debug, strlen(str_debug));
+			if(i==VoltVectorIndex)i=0;
+
+			sprintf_lib(str_debug, "0 %d ", NTC_GetWaterTemperature(TEMPERATURE_INLET));
+			Debug_Write(str_debug, strlen(str_debug));
+
+			sprintf_lib(str_debug, "%d ", NTC_GetWaterTemperature(TEMPERATURE_RESISTANCE));
+			Debug_Write(str_debug, strlen(str_debug));
+
+			sprintf_lib(str_debug, "%d ", NTC_GetWaterTemperature(TEMPERATURE_OUTLET));
+			Debug_Write(str_debug, strlen(str_debug));
+
+			sprintf_lib(str_debug, "%d ", Flowmeter_GetFlow()/10);
+			Debug_Write(str_debug, strlen(str_debug));
+
+			sprintf_lib(str_debug, "%d ", Flowmeter_GetFlowDerivative());
+			Debug_Write(str_debug, strlen(str_debug));
+
+			sprintf_lib(str_debug, "%d ", TRIAC_GetPower());
+			Debug_Write(str_debug, strlen(str_debug));
+
+			sprintf_lib(str_debug, "%d 0\n", User[UserIndex].TemperatureSetPoint);
+			Debug_Write(str_debug, strlen(str_debug));
+		#endif // _FAST_DEBUG
+
+		vTaskDelay(100);
+	}
+}
+#endif
+
+//====================================================================================================
+//
+//====================================================================================================
+void vApplicationIdleHook(void)
+{
+	/* vApplicationIdleHook() will only be called if configUSE_IDLE_HOOK is set
+	to 1 in FreeRTOSConfig.h.  It will be called on each iteration of the idle
+	task.  It is essential that code added to this hook function never attempts
+	to block in any way (for example, call xQueueReceive() with a block time
+	specified, or call vTaskDelay()).  If the application makes use of the
+	vTaskDelete() API function (as this demo application does) then it is also
+	important that vApplicationIdleHook() is permitted to return to its calling
+	function, because it is the responsibility of the idle task to clean up
+	memory allocated by the kernel to any task that has since been deleted. */
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+void vApplicationStackOverflowHook(xTaskHandle pxTask, signed char *pcTaskName)
+{
+	(void) pcTaskName;
+	(void) pxTask;
+
+	/* Run time stack overflow checking is performed if
+	configCHECK_FOR_STACK_OVERFLOW is defined to 1 or 2. This hook
+	function is called if a stack overflow is detected. */
+	taskDISABLE_INTERRUPTS();
+
+	// TODO - Desabilitar as interrupccoes de hardware ou pelo menos a do triac
+
+	for(;;);
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+void vApplicationTickHook(void)
+{
+	/* This function will be called by each tick interrupt if
+	configUSE_TICK_HOOK is set to 1 in FreeRTOSConfig.h.  User code can be
+	added here, but the tick hook is called from an interrupt context, so
+	code must not attempt to block, and only the interrupt safe FreeRTOS API
+	functions can be used (those that end in FromISR()). */
+}

@@ -1,0 +1,64 @@
+#include "Buzzer.h"
+#include "PWM.h"
+
+#include "FreeRTOS.h"
+#include "timers.h"
+
+#include "stm32f0xx.h"                  // STM32F0xx Definitions
+
+#define BUZZER_DUTYCYCLE 25
+
+void * pvTimerID;
+
+uint8_t BuzzerControl = 1;
+
+TimerHandle_t xBuzzerTimer;
+
+//==================================================================================================
+//
+//==================================================================================================
+void vBuzzerTimerCallback( TimerHandle_t pxTimer )
+{
+	PWM_SetDutyCycle (PWM_CHANNEL_BUZZER,   0);
+
+	xTimerStop( pxTimer, 0 );
+
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Buzzer_Init (void)
+{
+	PWM_Init ();
+
+	xBuzzerTimer = xTimerCreate("BuzzerTimer",
+								50 / portTICK_PERIOD_MS,
+								pdFALSE,
+								pvTimerID,
+								vBuzzerTimerCallback);
+
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Buzzer_Beep(uint16_t Time, uint8_t Repeat)
+{
+	if( BuzzerControl == BUZZER_ON)
+	{
+		PWM_SetDutyCycle (PWM_CHANNEL_BUZZER,   BUZZER_DUTYCYCLE);
+
+		xTimerChangePeriod( xBuzzerTimer, Time / portTICK_PERIOD_MS, 100 );
+
+		xTimerStart( xBuzzerTimer, 0 );
+	}
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Buzzer_Control(uint8_t On_Off)
+{
+	BuzzerControl = On_Off;
+}

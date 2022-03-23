@@ -1,0 +1,42 @@
+#ifndef SCREEN_H_
+#define SCREEN_H_
+
+#include "stm32f0xx.h"
+#include "Display.h"
+#include "main.h"
+#include "stdio.h"
+
+/* FreeRTOS includes */
+#include "FreeRTOS.h"
+#include "task.h"
+
+//-------------------------------
+//
+#define SCREEN_MAIN_IDLE        0x01
+#define SCREEN_MAIN_TEMPERATURE 0x02
+#define SCREEN_MAIN_POWER	    0x03
+
+
+#define SCREEN_MSG       0x10
+#define SCREEN_MAIN      0x11
+#define SCREEN_FLOW      0x12
+#define SCREEN_SETPOINT  0x13
+#define SCREEN_ERROR     0x14
+#define SCREEN_USER      0x15
+#define SCREEN_POWER     0x16
+#define SCREEN_TE        0x17
+#define SCREEN_TS        0x18
+#define SCREEN_VZ        0x19
+
+void Screen_Task();
+void Screen_ShowVersion();
+void Screen_ShowFlow();
+void Screen_ShowSetPoint( uint16_t SP );
+void Screen_ShowPower( uint8_t Power );
+void Screen_ShowUser( uint8_t User );
+void Screen_ShowMessage( char *Buff, uint8_t SizeBuff );
+void Screen_SetMainScreen( uint8_t Scr );
+
+#endif /* SCREEN_H_ */
+
+

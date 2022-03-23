@@ -1,0 +1,57 @@
+#ifndef SCREEN_H_
+#define SCREEN_H_
+
+#include "stm32f0xx.h"
+#include "Display.h"
+#include "Flowmeter.h"
+#include "main.h"
+#include "stdio.h"
+
+/* FreeRTOS includes */
+#include "FreeRTOS.h"
+#include "task.h"
+
+
+//-------------------------------
+//
+#define SCREEN_MSG       0x10
+#define SCREEN_MAIN      0x11
+#define SCREEN_FLOW      0x12
+#define SCREEN_SETPOINT  0x13
+#define SCREEN_ERROR     0x14
+#define SCREEN_USER      0x15
+#define SCREEN_POWER     0x16
+#define SCREEN_MENU      0x17
+#define SCREEN_LITERS    0x18
+
+//-------------------------------
+// Sub Screens of SCREEN_MAIN
+#define SCREEN_MAIN_IDLE        0xA1
+#define SCREEN_MAIN_TEMPERATURE 0xA2
+#define SCREEN_MAIN_POWER	    0xA3
+
+//-------------------------------
+// Sub Screens of SCREEN_MENU
+#define SCREEN_MENU_TE        0x01
+#define SCREEN_MENU_TS        0x02
+#define SCREEN_MENU_LT	      0x03
+#define SCREEN_MENU_VZ	      0x04
+#define SCREEN_MENU_TB	      0x05
+#define SCREEN_MENU_LG	      0x06
+#define SCREEN_MENU_CB	      0x07
+
+void Screen_Task();
+void Screen_ShowVersion();
+void Screen_ShowFlow();
+void Screen_ShowSetPoint( uint16_t SP );
+void Screen_ShowPower( uint8_t Power );
+void Screen_ShowUser( uint8_t User );
+void Screen_ShowMessage( char *Buff, uint8_t SizeBuff, uint8_t NextScreen );
+void Screen_SetMainScreen( uint8_t Scr );
+void Screen_ShowMenu();
+void Screen_ShowTimer();
+void Screen_ShowLiTers();
+
+#endif /* SCREEN_H_ */
+
+

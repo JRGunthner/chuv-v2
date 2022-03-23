@@ -1,0 +1,73 @@
+#===================================================================================================
+# Makefile Driver - Diego Ribeiro Pereira
+#===================================================================================================
+
+#--------------------------------------------
+# Path to StdPeriph_Lib
+ifndef STDPERIPH_DIR
+$(warning Warning  STDPERIPH_DIR not defined - Assuming "./StdPeriph_Lib")
+STDPERIPH_DIR=./StdPeriph_Lib
+endif
+
+#--------------------------------------------
+# Path to FreeRTOS
+ifndef FREERTOS_DIR
+$(warning Warning  FREERTOS_DIR not defined - Assuming "./FreeRTOS")
+FREERTOS_DIR=./FreeRTOS
+endif
+
+#--------------------------------------------
+# Device
+ifndef DEVICE
+$(warning Warning  DEVICE not defined - Assuming "STM32F051")
+DEVICE=STM32F051
+endif
+
+#--------------------------------------------
+# Compiler
+TOOLS_PREFIX=arm-none-eabi-
+CC=$(TOOLS_PREFIX)gcc
+AS=$(TOOLS_PREFIX)as
+AR=$(TOOLS_PREFIX)ar
+
+#--------------------------------------------
+# Compiler Flags
+CFLAGS = -DUSE_STDPERIPH_DRIVER -D$(DEVICE) -c -fno-common -O2 -Wall -g -mcpu=cortex-m0 -mthumb
+
+#--------------------------------------------
+# Includes
+CFLAGS+=	-I.                             \
+			-I../../                        \
+			-I../.$(STDPERIPH_DIR)          \
+			-I../.$(STDPERIPH_DIR)/inc      \
+			-I../.$(STDPERIPH_DIR)/cmsis    \
+			-I../.$(FREERTOS_DIR)           \
+			-I../.$(FREERTOS_DIR)/inc       \
+			-I../PWM                        \
+			-I../AD
+			
+
+#--------------------------------------------
+# Source Code Files
+SRCS=Touch.c
+
+#--------------------------------------------
+# Object Files (Made from Source code list above)
+OBJS=$(SRCS:.c=.o)
+
+#===================================================================================================
+# Build All
+#===================================================================================================
+all: $(OBJS)
+
+#===================================================================================================
+# Build object files from source code
+#===================================================================================================
+%.o:%.c
+	$(CC) $(CFLAGS) -c $^ -o $@
+
+#===================================================================================================
+# Clean 
+#===================================================================================================
+clean:
+	rm -f 	$(OBJS)

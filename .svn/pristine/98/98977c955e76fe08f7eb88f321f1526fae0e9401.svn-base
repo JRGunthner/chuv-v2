@@ -1,0 +1,146 @@
+#include "Flowmeter.h"
+
+#include "stm32f0xx.h"
+#include "stdio.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "main.h"
+
+static uint32_t Frequency;
+static uint32_t DutyCycle;
+
+#define NUM_SAMPLES 5
+static uint8_t Current_Sample;
+static uint32_t Frequency_Samples[NUM_SAMPLES];
+static uint32_t DutyCycle_Samples[NUM_SAMPLES];
+
+//==================================================================================================
+//
+//==================================================================================================
+void Flowmeter_Init(void)
+{
+	GPIO_InitTypeDef GPIO_InitStructure;
+	NVIC_InitTypeDef NVIC_InitStructure;
+	TIM_ICInitTypeDef  TIM_ICInitStructure;
+
+	/* TIM2 clock enable */
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
+
+	/* GPIOA clock enable */
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOA, ENABLE);
+
+	/* TIM2 chennel2 configuration : PA.01 */
+	GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_1;
+	GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AF;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_PuPd  = GPIO_PuPd_UP ;
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+	/* Connect TIM pin to AF2 */
+	GPIO_PinAFConfig(GPIOA, GPIO_PinSource1, GPIO_AF_2);
+
+	/* Enable the TIM2 global Interrupt */
+	NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
+	NVIC_InitStructure.NVIC_IRQChannelPriority = 0;
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&NVIC_InitStructure);
+
+
+	TIM_ICInitStructure.TIM_Channel = TIM_Channel_2;
+	TIM_ICInitStructure.TIM_ICPolarity = TIM_ICPolarity_Rising;
+	TIM_ICInitStructure.TIM_ICSelection = TIM_ICSelection_DirectTI;
+	TIM_ICInitStructure.TIM_ICPrescaler = TIM_ICPSC_DIV1;
+	TIM_ICInitStructure.TIM_ICFilter = 0x0;
+
+	TIM_PWMIConfig(TIM2, &TIM_ICInitStructure);
+
+	/* Select the TIM2 Input Trigger: TI2FP2 */
+	TIM_SelectInputTrigger(TIM2, TIM_TS_TI2FP2);
+
+	/* Select the slave Mode: Reset Mode */
+	TIM_SelectSlaveMode(TIM2, TIM_SlaveMode_Reset);
+	TIM_SelectMasterSlaveMode(TIM2,TIM_MasterSlaveMode_Enable);
+
+	/* TIM enable counter */
+	TIM_Cmd(TIM2, ENABLE);
+
+	/* Enable the CC2 Interrupt Request */
+	TIM_ITConfig(TIM2, TIM_IT_CC2, ENABLE);
+
+	Frequency = 0;
+	DutyCycle = 0;
+	Current_Sample = 0;
+}
+
+//==================================================================================================
+// Flowmeter
+//==================================================================================================
+void TIM2_IRQHandler (void)
+{
+    //External Signal Frequency = TIM2 counter clock / TIM2_CCR2 in Hz.
+    //External Signal DutyCycle = (TIM2_CCR1*100)/(TIM2_CCR2) in %.
+
+	uint8_t i;
+
+	uint32_t Frequency_Sum = 0;
+	uint32_t DutyCycle_Sum = 0;
+
+	if( Current_Sample>=NUM_SAMPLES ) Current_Sample = 0;
+	{
+		Frequency_Samples[Current_Sample] = SystemCoreClock / TIM2->CCR2;
+		DutyCycle_Samples[Current_Sample] = (TIM2->CCR1*100)/(TIM2->CCR2);
+		Current_Sample++;
+	}
+
+	for( i=0 ; i< NUM_SAMPLES; i++)
+	{
+		Frequency_Sum = Frequency_Sum + Frequency_Samples[i];
+		DutyCycle_Sum = DutyCycle_Sum + DutyCycle_Samples[i];
+	}
+
+	Frequency = Frequency_Sum / NUM_SAMPLES;
+	DutyCycle = Frequency_Sum / NUM_SAMPLES;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+uint32_t Flowmeter_GetFlow()
+{
+	uint32_t aux_flow;
+
+	if(Frequency > 0)
+	{
+		aux_flow = (-0.195+(Frequency*0.316))*10;
+	}
+	else
+	{
+		aux_flow = 0;
+	}
+
+	Frequency = 0;
+	DutyCycle = 0;
+
+	return aux_flow;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Flowmeter_EnableIRQ (void)
+{
+	NVIC_EnableIRQ (TIM2_IRQn);
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Flowmeter_DisableIRQ (void)
+{
+	NVIC_DisableIRQ (TIM2_IRQn);
+}
+
+
+
+

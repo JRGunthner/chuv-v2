@@ -1,0 +1,269 @@
+#include "LED.h"
+#include "PWM.h"
+#include "NTC.h"
+#include "Triac.h"
+
+static uint8_t CurrentColor;
+static uint8_t gRed;
+static uint8_t gGreen;
+static uint8_t gBlue;
+
+//==================================================================================================
+//
+//==================================================================================================
+void LED_Init (void)
+{
+	PWM_Init ();
+
+	gRed   = 0;
+	gGreen = 0;
+	gBlue  = 0;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void LED_SetRGB (uint8_t Red, uint8_t Green, uint8_t Blue)
+{
+	if(gRed < Red)	        gRed++;
+	else if(gRed > Red)	    gRed--;
+
+	if(gGreen < Green)	    gGreen++;
+	else if(gGreen > Green)	gGreen--;
+
+	if(gBlue < Blue)	    gBlue++;
+	else if(gBlue > Blue)	gBlue--;
+
+	PWM_SetDutyCycle (PWM_CHANNEL_LED_RED,   (100 * gRed  )/ 255 );
+	PWM_SetDutyCycle (PWM_CHANNEL_LED_GREEN, (100 * gGreen)/ 255 );
+	PWM_SetDutyCycle (PWM_CHANNEL_LED_BLUE,  (100 * gBlue )/ 255 );
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+void LED_Task (uint8_t  LedMode, uint8_t LedColor)
+{
+	switch(LedMode)
+	{
+		//--------------------------------------------
+		case LED_MODE_OFF:
+		{
+			LED_SetColor(LED_COLOR_OFF);
+			break;
+		}
+		//--------------------------------------------
+		case LED_MODE_TEMPERATURE:
+		{
+			LED_SetColorByTemperature(NTC_GetWaterTemperature(TEMPERATURE_OUTLET));
+			break;
+		}
+		//--------------------------------------------
+		case LED_MODE_POWER:
+		{
+			LED_SetColorByPower(TRIAC_GetPower());
+			break;
+		}
+		//--------------------------------------------
+		case LED_MODE_AUTO:
+		{
+			// TODO: Fazer o Led ficar Trocando de cor
+			LED_SetColor(LED_COLOR_WHITE);
+			break;
+		}
+		//--------------------------------------------
+		case LED_MODE_FIXED:
+		{
+			LED_SetColor(LedColor);
+			break;
+		}
+		//--------------------------------------------
+		default:
+		{
+			break;
+		}
+	}
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void LED_SetColor(uint8_t Color)
+{
+	switch(Color)
+	{
+		case LED_COLOR_OFF:
+		{
+			LED_SetRGB(0,0,0);
+			break;
+		}
+		case LED_COLOR_WHITE:
+		{
+			LED_SetRGB(255,255,255);
+			break;
+		}
+		case LED_COLOR_LIGHT_BLUE:
+		{
+			LED_SetRGB(50,50,255);
+			break;
+		}
+		case LED_COLOR_BLUE:
+		{
+			LED_SetRGB(0,0,255);
+			break;
+		}
+		case LED_COLOR_LIGHT_GREEN:
+		{
+			LED_SetRGB(50,255,50);
+			break;
+		}
+		case LED_COLOR_GREEN:
+		{
+			LED_SetRGB(0,255,0);
+			break;
+		}
+		case LED_COLOR_YELLOW:
+		{
+			LED_SetRGB(255,255,0);
+			break;
+		}
+		case LED_COLOR_ORANGE:
+		{
+			LED_SetRGB(255,50,0);
+			break;
+		}
+		case LED_COLOR_RED:
+		{
+			LED_SetRGB(255,0,0);
+			break;
+		}
+		default:
+		{
+			LED_SetRGB(0,0,0);
+			break;
+		}
+	}
+
+	CurrentColor = Color;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+uint8_t LED_GetColor()
+{
+	return CurrentColor;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+uint8_t LED_ReturnColorByPower(uint8_t Power)
+{
+	uint8_t ret;
+
+	// 0-12% -> WHITE
+	if( (Power>=0) && (Power<=12) )
+	{
+		ret = LED_COLOR_WHITE;
+	}
+	// 13-25% -> LIGHT BLUE
+	else if( (Power>=13) && (Power<=25) )
+	{
+		ret = LED_COLOR_LIGHT_BLUE;
+	}
+	// 26-38% -> BLUE
+	else if( (Power>=26) && (Power<=38) )
+	{
+		ret = LED_COLOR_BLUE;
+	}
+	// 39-51% -> LIGHT GREEN
+	else if( (Power>=39) && (Power<=51) )
+	{
+		ret = LED_COLOR_LIGHT_GREEN;
+	}
+	// 52-64% -> GREEN
+	else if( (Power>=52) && (Power<=64) )
+	{
+		ret = LED_COLOR_GREEN;
+	}
+	// 65-77% -> YELLOW
+	else if( (Power>=65) && (Power<=77) )
+	{
+		ret = LED_COLOR_YELLOW;
+	}
+	// 78-90% -> ORANGE
+	else if( (Power>=78) && (Power<=90) )
+	{
+		ret = LED_COLOR_ORANGE;
+	}
+	// 90-100% -> RED
+	else if( (Power>90) )
+	{
+		ret = LED_COLOR_RED;
+	}
+
+	return ret;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+uint8_t LED_ReturnColorByTemperature(int16_t Temperature)
+{
+	uint8_t ret;
+
+	// less than 30 degrees -> LIGHT BLUE
+	if( (Temperature<=30)  )
+	{
+		ret = LED_COLOR_LIGHT_BLUE;
+	}
+	// 31-32 degrees -> BLUE
+	else if( (Temperature>=31) && (Temperature<=32) )
+	{
+		ret = LED_COLOR_BLUE;
+	}
+	// 33-34 degrees -> LIGHT GREEN
+	else if( (Temperature>=33) && (Temperature<=34) )
+	{
+		ret = LED_COLOR_LIGHT_GREEN;
+	}
+	// 35-36 degrees -> GREEN
+	else if( (Temperature>=35) && (Temperature<=36) )
+	{
+		ret = LED_COLOR_GREEN;
+	}
+	// 37-38 degrees -> YELLOW
+	else if( (Temperature>=37) && (Temperature<=38) )
+	{
+		ret = LED_COLOR_YELLOW;
+	}
+	// 39-40% -> ORANGE
+	else if( (Temperature>=39) && (Temperature<=40) )
+	{
+		ret = LED_COLOR_ORANGE;
+	}
+	// more than 40 degrees -> RED
+	else if( (Temperature>40) )
+	{
+		ret = LED_COLOR_RED;
+	}
+
+	return ret;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void LED_SetColorByPower(uint8_t Power)
+{
+	LED_SetColor( LED_ReturnColorByPower(Power) );
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void LED_SetColorByTemperature(int16_t Temperature)
+{
+	LED_SetColor( LED_ReturnColorByTemperature(Temperature) );
+}

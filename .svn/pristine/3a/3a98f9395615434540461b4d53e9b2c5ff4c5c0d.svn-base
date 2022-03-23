@@ -1,0 +1,289 @@
+#include "LED.h"
+
+#include "stm32f0xx.h"                  // STM32F0xx Definitions
+
+//-------------------------------
+// Ports and Pins Definitions
+#define LED_PORT		GPIOB
+#define LED_PIN_RED		GPIO_Pin_8   // PB8  TIM16_CH1
+#define LED_PIN_GREEN	GPIO_Pin_14  // PB14 TIM15_CH1
+#define LED_PIN_BLUE	GPIO_Pin_15  // PB15 TIM15_CH2
+
+#define LED_PIN_SOURCE_RED    GPIO_PinSource8
+#define LED_PIN_SOURCE_GREEN  GPIO_PinSource14
+#define LED_PIN_SOURCE_BLUE   GPIO_PinSource15
+
+//-------------------------------
+//
+uint16_t TimerPeriod = 0;
+
+//==================================================================================================
+//
+//==================================================================================================
+void LED_Init (void)
+{
+
+	TIM_TimeBaseInitTypeDef  TIM_TimeBaseStructure;
+	TIM_OCInitTypeDef  TIM_OCInitStructure;
+
+	GPIO_InitTypeDef GPIO_InitStructure;
+
+	/* GPIOB Clocks enable */
+	RCC_AHBPeriphClockCmd( RCC_AHBPeriph_GPIOB, ENABLE);
+
+	/* GPIOB Configuration: Channel 1, 2, 3 and 4 as alternate function push-pull */
+	GPIO_InitStructure.GPIO_Pin = LED_PIN_RED | LED_PIN_GREEN | LED_PIN_BLUE;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_UP ;
+	GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+	GPIO_PinAFConfig(GPIOB, LED_PIN_SOURCE_RED, GPIO_AF_2);
+	GPIO_PinAFConfig(GPIOB, LED_PIN_SOURCE_GREEN, GPIO_AF_1);
+	GPIO_PinAFConfig(GPIOB, LED_PIN_SOURCE_BLUE, GPIO_AF_1);
+
+	/* Compute the value to be set in ARR regiter to generate signal frequency at 17.57 Khz */
+	TimerPeriod = (SystemCoreClock / 17570 ) - 1;
+
+	/* TIM15 TIM16 clock enable */
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM15 , ENABLE);
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM16 , ENABLE);
+
+	/* Time Base configuration */
+	TIM_TimeBaseStructure.TIM_Prescaler = 0;
+	TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
+	TIM_TimeBaseStructure.TIM_Period = TimerPeriod;
+	TIM_TimeBaseStructure.TIM_ClockDivision = 0;
+	TIM_TimeBaseStructure.TIM_RepetitionCounter = 0;
+
+	TIM_TimeBaseInit(TIM15, &TIM_TimeBaseStructure);
+	TIM_TimeBaseInit(TIM16, &TIM_TimeBaseStructure);
+
+	/* Channel 1, 2, 3 and 4 Configuration in PWM mode */
+	TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_PWM1;
+	TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable;
+	TIM_OCInitStructure.TIM_OutputNState = TIM_OutputNState_Enable;
+	TIM_OCInitStructure.TIM_OCPolarity = TIM_OCPolarity_High;
+	TIM_OCInitStructure.TIM_OCNPolarity = TIM_OCNPolarity_Low;
+	TIM_OCInitStructure.TIM_OCIdleState = TIM_OCIdleState_Set;
+	TIM_OCInitStructure.TIM_OCNIdleState = TIM_OCIdleState_Reset;
+
+	TIM_OCInitStructure.TIM_Pulse = 0;
+	TIM_OC1Init(TIM16, &TIM_OCInitStructure);
+
+	TIM_OCInitStructure.TIM_Pulse = 0;
+	TIM_OC1Init(TIM15, &TIM_OCInitStructure);
+
+	TIM_OCInitStructure.TIM_Pulse = 0;
+	TIM_OC2Init(TIM15, &TIM_OCInitStructure);
+
+	/* TIM15 TIM16 counter enable */
+	TIM_Cmd(TIM15, ENABLE);
+	TIM_Cmd(TIM16, ENABLE);
+
+	/* TIM15 TIM16 Main Output Enable */
+	TIM_CtrlPWMOutputs(TIM15, ENABLE);
+	TIM_CtrlPWMOutputs(TIM16, ENABLE);
+
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void LED_SetRGB (uint8_t Red, uint8_t Green, uint8_t Blue)
+{
+	uint32_t Channel1Pulse = 0;
+	uint32_t Channel2Pulse = 0;
+	uint32_t Channel3Pulse = 0;
+
+	Channel1Pulse = (100 * Red)   / 255; // Rule of three to calculate each led Temperature
+	Channel1Pulse = (uint32_t) (((uint32_t) Channel1Pulse * (TimerPeriod - 1)) / 100);
+	TIM_SetCompare1(TIM16, Channel1Pulse);
+
+	Channel2Pulse = (100 * Green) / 255; // Rule of three to calculate each led Temperature
+	Channel2Pulse = (uint32_t) (((uint32_t) Channel2Pulse * (TimerPeriod - 1)) / 100);
+	TIM_SetCompare1(TIM15, Channel2Pulse);
+
+	Channel3Pulse = (100 * Blue)  / 255; // Rule of three to calculate each led Temperature
+	Channel3Pulse = (uint32_t) (((uint32_t) Channel3Pulse * (TimerPeriod - 1)) / 100);
+	TIM_SetCompare2(TIM15, Channel3Pulse);
+
+
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void LED_SetColor(uint8_t Color)
+{
+	switch(Color)
+	{
+		case LED_COLOR_OFF:
+		{
+			LED_SetRGB(0,0,0);
+			break;
+		}
+		case LED_COLOR_WHITE:
+		{
+			LED_SetRGB(255,255,255);
+			break;
+		}
+		case LED_COLOR_LIGHT_BLUE:
+		{
+			LED_SetRGB(50,50,255);
+			break;
+		}
+		case LED_COLOR_BLUE:
+		{
+			LED_SetRGB(0,0,255);
+			break;
+		}
+		case LED_COLOR_LIGHT_GREEN:
+		{
+			LED_SetRGB(50,255,50);
+			break;
+		}
+		case LED_COLOR_GREEN:
+		{
+			LED_SetRGB(0,255,0);
+			break;
+		}
+		case LED_COLOR_YELLOW:
+		{
+			LED_SetRGB(255,255,0);
+			break;
+		}
+		case LED_COLOR_ORANGE:
+		{
+			LED_SetRGB(255,50,0);
+			break;
+		}
+		case LED_COLOR_RED:
+		{
+			LED_SetRGB(255,0,0);
+			break;
+		}
+		default:
+		{
+			LED_SetRGB(0,0,0);
+			break;
+		}
+	}
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+uint8_t LED_GetColorByPower(uint8_t Power)
+{
+	uint8_t ret;
+
+	// 0-12% -> WHITE
+	if( (Power>=0) && (Power<=12) )
+	{
+		ret = LED_COLOR_WHITE;
+	}
+	// 13-25% -> LIGHT BLUE
+	else if( (Power>=13) && (Power<=25) )
+	{
+		ret = LED_COLOR_LIGHT_BLUE;
+	}
+	// 26-38% -> BLUE
+	else if( (Power>=26) && (Power<=38) )
+	{
+		ret = LED_COLOR_BLUE;
+	}
+	// 39-51% -> LIGHT GREEN
+	else if( (Power>=39) && (Power<=51) )
+	{
+		ret = LED_COLOR_LIGHT_GREEN;
+	}
+	// 52-64% -> GREEN
+	else if( (Power>=52) && (Power<=64) )
+	{
+		ret = LED_COLOR_GREEN;
+	}
+	// 65-77% -> YELLOW
+	else if( (Power>=65) && (Power<=77) )
+	{
+		ret = LED_COLOR_YELLOW;
+	}
+	// 78-90% -> ORANGE
+	else if( (Power>=78) && (Power<=90) )
+	{
+		ret = LED_COLOR_ORANGE;
+	}
+	// 90-100% -> RED
+	else if( (Power>90) )
+	{
+		ret = LED_COLOR_RED;
+	}
+
+	return ret;
+
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+uint8_t LED_GetColorByTemperature(int16_t Temperature)
+{
+	uint8_t ret;
+
+	// less than 30 degrees -> LIGHT BLUE
+	if( (Temperature<=30)  )
+	{
+		ret = LED_COLOR_LIGHT_BLUE;
+	}
+	// 31-32 degrees -> BLUE
+	else if( (Temperature>=31) && (Temperature<=32) )
+	{
+		ret = LED_COLOR_BLUE;
+	}
+	// 33-34 degrees -> LIGHT GREEN
+	else if( (Temperature>=33) && (Temperature<=34) )
+	{
+		ret = LED_COLOR_LIGHT_GREEN;
+	}
+	// 35-36 degrees -> GREEN
+	else if( (Temperature>=35) && (Temperature<=36) )
+	{
+		ret = LED_COLOR_GREEN;
+	}
+	// 37-38 degrees -> YELLOW
+	else if( (Temperature>=37) && (Temperature<=38) )
+	{
+		ret = LED_COLOR_YELLOW;
+	}
+	// 39-40% -> ORANGE
+	else if( (Temperature>=39) && (Temperature<=40) )
+	{
+		ret = LED_COLOR_ORANGE;
+	}
+	// more than 40 degrees -> RED
+	else if( (Temperature>40) )
+	{
+		ret = LED_COLOR_RED;
+	}
+
+	return ret;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void LED_SetColorByPower(uint8_t Power)
+{
+	LED_SetColor( LED_GetColorByPower(Power) );
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void LED_SetColorByTemperature(int16_t Temperature)
+{
+	LED_SetColor( LED_GetColorByTemperature(Temperature) );
+}
+
+

@@ -1,0 +1,20 @@
+#ifndef TOUCH_H_
+#define TOUCH_H_
+
+#include "stm32f0xx.h"
+
+/* FreeRTOS includes */
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+
+void TOUCH_Init(xQueueHandle *QueueHandler);
+void TOUCH_Task();
+
+uint32_t TOUCH_GetArithmeticMeanUp();
+uint32_t TOUCH_GetArithmeticMeanDown();
+
+uint32_t TOUCH_GetWeightedArithmeticMeanUp();
+uint32_t TOUCH_GetWeightedArithmeticMeanDown();
+
+#endif /* TOUCH_H_ */

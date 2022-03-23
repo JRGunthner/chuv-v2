@@ -1,0 +1,75 @@
+#ifndef __SCREEN_H
+#define __SCREEN_H
+
+#include "stm32f0xx.h"
+#include "Display.h"
+#include "Flowmeter.h"
+#include "main.h"
+#include "stdio.h"
+
+/* FreeRTOS includes */
+#include "FreeRTOS.h"
+#include "task.h"
+
+//----------------------------
+// Headers that translate shower messages
+#include "TranslateBR.h"
+//#include "TranslateING.h"
+//#include "TranslateESP.h"
+
+//-------------------------------
+// Screen_Show() defines
+#define SCREEN_VERSION                 0x01
+#define SCREEN_MENU                    0x02
+#define SCREEN_FLOW                    0x07
+#define SCREEN_TEMPERATURE             0x08
+#define SCREEN_TEMPERATURE_SETPOINT    0x09
+#define SCREEN_POWER_SETPOINT          0x10
+#define SCREEN_MESSAGE_LED_OFF         0x11
+#define SCREEN_MESSAGE_LED_ON          0x12
+#define SCREEN_MESSAGE_LED_TEMPERATURE 0x13
+#define SCREEN_MESSAGE_LED_AUTO        0x14
+#define SCREEN_MESSAGE_LED_FIXED       0x15
+#define SCREEN_MESSAGE_LED_POWER       0x16
+#define SCREEN_MESSAGE_BIP_ON          0x18
+#define SCREEN_MESSAGE_BIP_OFF         0x19
+#define SCREEN_MESSAGE_WELLCOME        0x20
+#define SCREEN_TIMER                   0x23
+#define SCREEN_USER                    0x24
+#define SCREEN_LITERS                  0x25
+#define SCREEN_BATH_END                0x26
+#define SCREEN_BATH_REPORT             0x27
+
+//-------------------------------
+// Screen_SetMainScreen() defines
+#define SCREEN_MAIN_IDLE               0x28
+#define SCREEN_MAIN_TEMPERATURE        0x29
+#define SCREEN_MAIN_POWER              0x30
+#define SCREEN_MAIN_ERROR              0x31
+
+//-------------------------------
+// Functions Definitions
+
+/**
+  * @brief  Prints in Displays the Firmware Version and the first Welcome Message
+  * @param  None
+  * @retval None
+  */
+void Screen_Init();
+
+/**
+  * @brief
+  * @param  TSP: Temperature Set Point.
+  * 				This parameter must be set to a value in the 200-450 range. // Verificar se a faixa está correta
+  * @param  PSP: Power Set Point.
+  * 				This parameter must be set to a value in the 0-9 range.
+  * @param  UI:  User Index.
+  * 				This parameter must be set to a value in the 1-6 range.
+  * @retval None
+  */
+void Screen_Task(uint16_t TSP, uint8_t PSP, uint8_t UI);
+
+void Screen_Show(uint8_t Scr);
+void Screen_SetMainSubScreen(uint8_t Scr);
+
+#endif /* __SCREEN_H */

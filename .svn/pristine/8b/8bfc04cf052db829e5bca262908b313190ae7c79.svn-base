@@ -1,0 +1,113 @@
+#include "Screen.h"
+#include "NTC.h"
+
+#define SCREEN_BUFFER_LEN 20
+
+enum { SCREEN_MSG, SCREEN_MAIN, SCREEN_FLOW, SCREEN_SETPOINT, SCREEN_ERROR };
+
+
+uint8_t DisplayBuffer[SCREEN_BUFFER_LEN];
+
+uint8_t MainScreen = SCREEN_IDLE;
+uint8_t Screen = SCREEN_MAIN;
+uint8_t iSize = 0;
+uint8_t iSizeAux = 0;
+uint16_t sleep = 0;
+
+int32_t DValue;
+
+//==================================================================================================
+//
+//==================================================================================================
+void Screen_Task()
+{
+
+	if( iSizeAux < iSize )
+	{
+		Screen = SCREEN_MSG;
+	}
+	else
+	{
+		Screen = SCREEN_MAIN;
+	}
+
+	switch( Screen )
+	{
+	    //--------------------------------------------
+		case SCREEN_MSG:
+		{
+			Display_UpdateChar(DisplayBuffer[iSizeAux] , DisplayBuffer[iSizeAux+1] );
+			iSizeAux = iSizeAux+1;
+			if(iSizeAux >  iSize)
+			{
+				iSize = 0;
+				iSizeAux = 0;
+			}
+			break;
+		}
+		//--------------------------------------------
+		case SCREEN_MAIN:
+		{
+			if( MainScreen == SCREEN_POWER ) //POWER
+			{
+				Display_UpdateValue(99);
+			}
+			else if( MainScreen == SCREEN_TEMPERATURE) //TEMPERATURE
+			{
+				Display_UpdateValue(NTC_GetWaterTemperature(TEMPERATURE_OUTLET));
+			}
+			else //IDLE
+			{
+				Display_UpdateChar('-','-');
+			}
+
+			//TODO: De tanto em tanto tempo mostra MyShower
+
+			break;
+		}
+		//--------------------------------------------
+		case SCREEN_FLOW:
+		{
+			//Display_UpdateValue(Flowmeter_GetFlow()/10);
+			Screen = SCREEN_MAIN;
+			break;
+		}
+		//--------------------------------------------
+		case SCREEN_SETPOINT:
+		{
+			//Display_UpdateValue(User[UserIndex].TemperatureSetPoint);
+			Screen = SCREEN_MAIN;
+			break;
+		}
+	}
+
+	if( Screen == SCREEN_MSG)
+	{
+		vTaskDelay(600);
+	}
+	else
+	{
+		vTaskDelay(100);
+	}
+
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Screen_Message( char *Buff, uint8_t SizeBuff )
+{
+	sprintf( (char*)DisplayBuffer, "%s", Buff);
+	iSize = SizeBuff;
+	iSizeAux = 0;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Screen_SetMainScreen( uint8_t Screen )
+{
+	MainScreen = Screen;
+}
+
+

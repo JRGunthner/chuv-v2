@@ -1,0 +1,97 @@
+#ifndef __DISPLAY_H
+#define __DISPLAY_H
+
+#include "stm32f0xx.h"
+
+#define DISPLAY_TRUE		1
+#define DISPLAY_FALSE		0
+
+#define DISP_A       GPIO_Pin_13
+#define DISP_B       GPIO_Pin_12
+#define DISP_C       GPIO_Pin_11
+#define DISP_D       GPIO_Pin_10
+#define DISP_E       GPIO_Pin_2
+#define DISP_F       GPIO_Pin_1
+#define DISP_G       GPIO_Pin_12
+#define DISP_DOT     GPIO_Pin_7
+#define DISP_UN      GPIO_Pin_6
+
+#define		_SP_		  	0x00
+#define		_APAGADO_		0x00
+
+#define		_SEG_A_		0x01
+#define		_SEG_B_		0x02
+#define		_SEG_C_		0x04
+#define		_SEG_D_		0x08
+#define		_SEG_E_		0x10
+#define		_SEG_F_		0x20
+#define		_SEG_G_		0x40
+#define		_PONTO_		0x80
+
+/*ERATOR*/ 
+#define __OP	|
+
+#define	_0_		(_SEG_A_ __OP _SEG_B_ __OP _SEG_C_ __OP _SEG_D_ __OP _SEG_E_ __OP _SEG_F_ )	
+#define	_1_		(_SEG_B_ __OP _SEG_C_ )	
+#define	_2_		(_SEG_A_ __OP _SEG_B_ __OP _SEG_D_ __OP _SEG_E_ __OP _SEG_G_)	
+#define	_3_		(_SEG_A_ __OP _SEG_B_ __OP _SEG_C_ __OP _SEG_D_ __OP _SEG_G_)	
+#define	_4_		(_SEG_B_ __OP _SEG_C_ __OP _SEG_F_ __OP _SEG_G_)	
+#define	_5_		(_SEG_A_ __OP _SEG_C_ __OP _SEG_D_ __OP _SEG_F_ __OP _SEG_G_)	
+#define	_6_		(_SEG_A_ __OP _SEG_C_ __OP _SEG_D_ __OP _SEG_E_ __OP _SEG_F_ __OP _SEG_G_)	
+#define	_7_		(_SEG_A_ __OP _SEG_B_ __OP _SEG_C_ )	
+#define	_8_		(_SEG_A_ __OP _SEG_B_ __OP _SEG_C_ __OP _SEG_D_ __OP _SEG_E_ __OP _SEG_F_ __OP _SEG_G_ )
+#define	_9_		(_SEG_A_ __OP _SEG_B_ __OP _SEG_C_ __OP _SEG_D_ __OP _SEG_F_ __OP _SEG_G_ )	
+#define	_A_		(_SEG_A_ __OP _SEG_B_ __OP _SEG_C_ __OP _SEG_E_ __OP _SEG_F_ __OP _SEG_G_ )
+#define	_b_		(_SEG_C_ __OP _SEG_D_ __OP _SEG_E_ __OP _SEG_F_ __OP _SEG_G_ )	
+#define	_c_		(_SEG_D_ __OP _SEG_E_ __OP _SEG_G_ )	
+#define	_C_		(_SEG_A_ __OP _SEG_D_ __OP _SEG_E_ __OP _SEG_F_ )	
+#define	_d_		(_SEG_B_ __OP _SEG_C_ __OP _SEG_D_ __OP _SEG_E_ __OP _SEG_G_ )	
+#define	_E_		(_SEG_A_ __OP _SEG_D_ __OP _SEG_E_ __OP _SEG_F_ __OP _SEG_G_ )
+#define	_F_		(_SEG_A_ __OP _SEG_E_ __OP _SEG_F_ __OP _SEG_G_ )	
+#define	_G_		(_SEG_A_ __OP _SEG_C_ __OP _SEG_D_ __OP _SEG_E_ __OP _SEG_F_ )	
+#define	_H_		(_SEG_B_ __OP _SEG_C_ __OP _SEG_E_ __OP _SEG_F_ __OP _SEG_G_ )	
+#define	_h_		(_SEG_C_ __OP _SEG_E_ __OP _SEG_F_ __OP _SEG_G_ )	
+
+#define	_i_		(_SEG_C_ )
+#define	_I_		(_SEG_B_ __OP _SEG_C_ )
+#define	_J_		(_SEG_B_ __OP _SEG_C_ __OP _SEG_D_ __OP _SEG_E_ )
+#define	_L_		(_SEG_D_ __OP _SEG_E_ __OP _SEG_F_ )
+
+#define	_n_		(_SEG_C_ __OP _SEG_E_ __OP _SEG_G_ )	
+#define	_O_		(_SEG_A_ __OP _SEG_B_ __OP _SEG_C_ __OP _SEG_D_ __OP _SEG_E_ __OP _SEG_F_ )	
+#define	_o_		(_SEG_C_ __OP _SEG_D_ __OP _SEG_E_ __OP _SEG_G_ )	
+#define	_P_		(_SEG_A_ __OP _SEG_B_ __OP _SEG_E_ __OP _SEG_F_ __OP _SEG_G_ )	
+
+#define	_r_		(_SEG_E_ __OP _SEG_G_ )
+#define	_S_		(_SEG_A_ __OP _SEG_C_ __OP _SEG_D_ __OP _SEG_F_ __OP _SEG_G_ )	
+#define	_t_		(_SEG_D_ __OP _SEG_E_ __OP _SEG_F_ __OP _SEG_G_ )
+#define	_U_		(_SEG_B_ __OP _SEG_C_ __OP _SEG_D_ __OP _SEG_E_ __OP _SEG_F_ )
+#define	_u_		(_SEG_C_ __OP _SEG_D_ __OP _SEG_E_ )	
+#define _Y_		(_SEG_B_ __OP _SEG_C_ __OP _SEG_D_ __OP _SEG_F_ __OP _SEG_G_ )
+
+#define	_GRAUS_	   ( _SEG_A_ __OP _SEG_B_ __OP _SEG_F_ __OP _SEG_G_ )	
+#define	_HORAS_	   ( _h_ )	
+#define	_MINUTOS_	( _SEG_F_ )	
+#define	_SEGUNDOS_  ( _SEG_B_ __OP _SEG_F_)	
+#define	_POR_CENTO_ ( _SEG_C_ __OP _SEG_D_ __OP _SEG_E_ __OP _SEG_G_ )	
+#define	_VOLTS_	   ( _u_ )	
+
+extern const  uint8_t TABELA_NUMERO[];
+
+typedef struct {
+	uint8_t blTesteDisp:1;
+	uint8_t blPonto1:1;
+	uint8_t blPonto2:1;
+	uint8_t blresto:5;
+	uint8_t TesteDisp;
+	uint8_t Digi1;
+	uint8_t Digi2;
+}Display_struct;
+
+extern Display_struct Display;
+void Display_Init(void);
+void Display_Atualiza(uint8_t ucByte);
+void Display_task(void);
+void Display_Separa(int8_t value);
+
+#endif

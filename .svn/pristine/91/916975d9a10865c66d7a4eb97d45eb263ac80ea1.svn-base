@@ -1,0 +1,90 @@
+#ifndef __IRDA_H
+#define __IRDA_H
+
+#include "stm32f0xx.h"
+
+/* FreeRTOS includes */
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+
+
+/*
+ +------------()------------+
+ |                          |
+ |  +----+  +----+  +----+  |
+ |  ¦ A1 |  | A2 |  | A3 |  |
+ |  +----+  +----+  +----+  |
+ |  +----+  +----+  +----+  |
+ |  ¦ B1 |  | B2 |  | B3 |  |
+ |  +----+  +----+  +----+  |
+ |  +----+  +----+  +----+  |
+ |  ¦ C1 |  | C2 |  | C3 |  |
+ |  +----+  +----+  +----+  |
+ |  +----+  +----+  +----+  |
+ |  ¦ D1 |  | D2 |  | D3 |  |
+ |  +----+  +----+  +----+  |
+ |  +----+  +----+  +----+  |
+ |  ¦ E1 |  | E2 |  | E3 |  |
+ |  +----+  +----+  +----+  |
+ |  +----+  +----+  +----+  |
+ |  ¦ F1 |  | F2 |  | F3 |  |
+ |  +----+  +----+  +----+  |
+ |  +----+  +----+  +----+  |
+ |  ¦ G1 |  | G2 |  | G3 |  |
+ |  +----+  +----+  +----+  |
+ |                          |
+ +--------------------------+
+ */
+
+//-------------------------------
+// Remote Control Key codes
+#define A1 0x24DBB04F
+#define A2 0x24DBB24D
+#define A3 0x24DB32CD
+
+#define B1 0x24DBE817
+#define B2 0x24DB51AE
+#define B3 0x24DB12ED
+
+#define C1 0x24DB817E
+#define C2 0x24DBA15E
+#define C3 0x24DB9966
+
+#define D1 0x24DBA05F
+#define D2 0x24DB09F6
+#define D3 0x24DB08F7
+
+#define E1 0x24DB10EF
+#define E2 0x24DB38C7
+#define E3 0x24DBA857
+
+#define F1 0x24DBC837
+#define F2 0x24DBC43B
+#define F3 0x24DBEC13
+
+#define G1 0x24DBC23D
+#define G2 0x24DB9A65
+#define G3 0x24DBC13E
+
+//-------------------------------
+// Remote Control Key Functions
+#define KEY_UP           B2
+#define KEY_DOWN         D2
+#define KEY_TEMPERATURE  C1
+#define KEY_POWER        C3
+#define KEY_MENU         C2
+#define KEY_HIDDEN_MENU  E3
+#define KEY_CALIBRACAO   E1
+#define KEY_TIMER        F1
+#define KEY_LITERS       F2
+#define KEY_USER         F3
+#define KEY_BIP          G1
+#define KEY_LED_OFF      G2
+#define KEY_LED_AUTO     G3
+
+void IrDA_Init(xQueueHandle *QueueHandler);
+void IrDA_EnableIRQ (void);
+void IrDA_DisableIRQ (void);
+
+#endif

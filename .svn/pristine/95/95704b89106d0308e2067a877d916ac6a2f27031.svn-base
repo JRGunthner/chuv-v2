@@ -1,0 +1,26 @@
+#ifndef __RTCC_H
+#define __RTCC_H
+
+
+#include "stm32f0xx.h"
+
+
+#define RTC_CLOCK_SOURCE_LSI     //Low Speed Internal Oscillator
+//#define RTC_CLOCK_SOURCE_LSE   //Low Speed External Oscillator
+
+typedef struct
+{
+	uint8_t WeekDay;
+	uint8_t Date;
+	uint8_t Month;
+	uint8_t Year;
+	uint8_t Hours;
+	uint8_t Minutes;
+	uint8_t Seconds;
+}RTCC_TimeDateTypeDef;
+
+void RTCC_Init (void);
+void RTCC_SetTimeDate(RTCC_TimeDateTypeDef RTCC_TimeDate);
+void RTCC_GetTimeDate(RTCC_TimeDateTypeDef* RTCC_TimeDate);
+
+#endif //__RTCC_H

@@ -1,0 +1,23 @@
+#ifndef __DISPLAY_H
+#define __DISPLAY_H
+
+#include "stm32f0xx.h"
+
+//----------------------------------------------
+// Defines for Display_UpdatePoints function
+#define DISPLAY_POINT_MIDDLE 0x01
+#define DISPLAY_POINT_RIGHT  0x10
+
+
+
+void Display_Init(void);
+void Display_Task(void);
+
+void Display_UpdateChar(uint8_t CharLeft, uint8_t CharRight );
+void Display_UpdateDecimal(uint8_t DecimalDigitLeft, uint8_t DecimalDigitRight);
+void Display_UpdateValue(int32_t Value); 			// TODO: Colocar comentario
+void Display_UpdatePoints(uint8_t Value, uint8_t Point);
+void Display_Version(uint8_t Major, uint8_t Minor);
+
+
+#endif

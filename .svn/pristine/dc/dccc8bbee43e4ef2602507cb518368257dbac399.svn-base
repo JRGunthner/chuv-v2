@@ -1,0 +1,19 @@
+#ifndef __FLOWMETER_H
+#define __FLOWMETER_H
+
+#include "stm32f0xx.h"
+
+#define FLOW_ON    180
+#define FLOW_OFF   150
+
+void Flowmeter_Init(void);
+void Flowmeter_EnableIRQ (void);
+void Flowmeter_DisableIRQ (void);
+
+void Flowmeter_Task(void);
+
+uint16_t Flowmeter_GetFlow();
+uint32_t Flowmeter_GetFrequency();
+int16_t  Flowmeter_GetFlowDerivative();
+
+#endif

@@ -1,0 +1,36 @@
+#ifndef __LED_H
+#define __LED_H
+
+#include "stm32f0xx.h"
+
+//-------------------------------
+// User Led Mode
+#define LED_MODE_OFF			0x01
+#define LED_MODE_TEMPERATURE    0x02
+#define LED_MODE_POWER			0x03
+#define LED_MODE_AUTO			0x04
+#define LED_MODE_FIXED			0x05
+
+//-------------------------------
+// LED color Definitions for LED_SetColor()
+#define LED_COLOR_OFF			0x00
+#define LED_COLOR_WHITE    	    0x01
+#define LED_COLOR_LIGHT_BLUE  	0x02
+#define LED_COLOR_BLUE  		0x03
+#define LED_COLOR_LIGHT_GREEN  	0x04
+#define LED_COLOR_GREEN  		0x05
+#define LED_COLOR_YELLOW  		0x06
+#define LED_COLOR_ORANGE  		0x07
+#define LED_COLOR_RED		  	0x08
+
+//-------------------------------
+// Functions Definitions
+void    LED_Init (void);
+void    LED_SetRGB (uint8_t Red, uint8_t Green, uint8_t Blue);
+void    LED_SetColor(uint8_t Color);
+void    LED_SetColorByPower(uint8_t Power);
+void    LED_SetColorByTemperature(int16_t Temperature);
+uint8_t LED_GetColor();
+void    LED_Task (uint8_t  LedMode, uint8_t LedColor);
+
+#endif

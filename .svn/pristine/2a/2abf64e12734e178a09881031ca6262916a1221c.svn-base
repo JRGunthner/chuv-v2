@@ -1,0 +1,176 @@
+#include "Display.h"
+
+Display_struct Display;
+
+const uint8_t TABELA_NUMERO[] = { _0_, _1_, _2_, _3_, _4_, _5_, _6_,_7_, _8_, _9_, _A_, _b_, _C_, _d_, _E_, _F_, _SEG_D_ };
+
+//==================================================================================================
+//
+//==================================================================================================
+void Display_Init(void)
+{
+
+	GPIO_InitTypeDef GPIO_InitStructure;
+
+	/* GPIOC Periph clock enable */
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOB, ENABLE);
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOA, ENABLE);
+	RCC_AHBPeriphClockCmd(RCC_AHBPeriph_GPIOF, ENABLE);
+
+	GPIO_InitStructure.GPIO_Pin = DISP_F|DISP_E|DISP_D|DISP_C|DISP_B|DISP_A;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+
+	GPIO_Init(GPIOB, &GPIO_InitStructure);
+
+	GPIO_InitStructure.GPIO_Pin = DISP_DOT|DISP_UN;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+
+	GPIO_Init(GPIOF, &GPIO_InitStructure);
+
+	GPIO_InitStructure.GPIO_Pin = DISP_G;
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
+	GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
+
+	GPIO_WriteBit(GPIOB, DISP_A,0);
+	GPIO_WriteBit(GPIOB, DISP_B,0);
+	GPIO_WriteBit(GPIOB, DISP_C,0);
+	GPIO_WriteBit(GPIOB, DISP_D,0);
+	GPIO_WriteBit(GPIOB, DISP_E,0);
+	GPIO_WriteBit(GPIOB, DISP_F,0);
+	GPIO_WriteBit(GPIOA, DISP_G,0);
+	GPIO_WriteBit(GPIOF, DISP_DOT,0);
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Display_Atualiza(uint8_t ucByte)
+{
+	union {
+		uint8_t _Byte;
+		struct {
+			uint8_t _bA :1;
+			uint8_t _bB :1;
+			uint8_t _bC :1;
+			uint8_t _bD :1;
+			uint8_t _bE :1;
+			uint8_t _bF :1;
+			uint8_t _bG :1;
+			uint8_t _bDP :1;
+		} _Bits;
+	} Scc;
+
+	Scc._Byte = ucByte;
+	GPIO_WriteBit(GPIOB, DISP_A,(BitAction)Scc._Bits._bA);
+	GPIO_WriteBit(GPIOB, DISP_B,(BitAction)Scc._Bits._bB);
+	GPIO_WriteBit(GPIOB, DISP_C,(BitAction)Scc._Bits._bC);
+	GPIO_WriteBit(GPIOB, DISP_D,(BitAction)Scc._Bits._bD);
+	GPIO_WriteBit(GPIOB, DISP_E,(BitAction)Scc._Bits._bE);
+	GPIO_WriteBit(GPIOB, DISP_F,(BitAction)Scc._Bits._bF);
+	GPIO_WriteBit(GPIOA, DISP_G,(BitAction)Scc._Bits._bG);
+	GPIO_WriteBit(GPIOF, DISP_DOT,(BitAction)Scc._Bits._bDP);
+
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Display_task(void)
+{
+	static char ucDispSelect;
+
+	if (ucDispSelect)
+	{
+		Display_Atualiza( _SP_ );
+
+		GPIO_WriteBit(GPIOF, DISP_UN,(BitAction)DISPLAY_FALSE);
+
+		if (Display.blPonto2)
+		{
+			Display_Atualiza(Display.Digi1 | 0x80);
+		}
+		else
+		{
+			Display_Atualiza(Display.Digi1);
+		}
+
+		ucDispSelect = DISPLAY_FALSE;
+	}
+	else
+	{
+		Display_Atualiza( _SP_ );
+
+		GPIO_WriteBit(GPIOF, DISP_UN,(BitAction)DISPLAY_TRUE);
+
+		if (Display.blPonto1)
+		{
+			Display_Atualiza(Display.Digi2 | 0x80);
+		}
+		else
+		{
+			Display_Atualiza(Display.Digi2);
+		}
+
+		ucDispSelect = DISPLAY_TRUE;
+	}
+
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Display_Separa(int8_t value)
+{
+	static uint8_t digi_1, digi_2, temp;
+
+	temp = value;
+
+	if (((int8_t) temp >= 0) && ((int8_t) temp <= 99))
+	{
+		digi_2 = 0;
+		while ((int8_t) temp >= 10)
+		{
+			temp = temp - 10;
+			digi_2++;
+		}
+
+		digi_1 = (int8_t) temp;
+
+		Display.Digi1 = TABELA_NUMERO[digi_1];
+		Display.Digi2 = TABELA_NUMERO[digi_2];
+
+	}
+	else if ((int16_t) temp < 0 && (int16_t) temp > -19)
+	{
+		temp = ~temp + 1;
+
+		digi_2 = 0;
+		while ((int8_t) temp >= 10)
+		{
+			temp = (int8_t) temp - 10;
+			digi_2++;
+		}
+		digi_1 = (int8_t) temp;
+
+		Display.Digi1 = TABELA_NUMERO[digi_1];
+		Display.Digi2 = TABELA_NUMERO[digi_2] __OP _SEG_G_;
+
+	}
+	else
+	{
+		Display.Digi2 = _E_;
+		Display.Digi1 = _r_;
+	}
+
+}
+

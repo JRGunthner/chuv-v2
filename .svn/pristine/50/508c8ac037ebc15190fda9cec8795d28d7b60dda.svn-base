@@ -1,0 +1,27 @@
+#ifndef __AD_H
+  #define __AD_H
+
+#include "stm32f0xx.h"
+
+//-------------------------------
+// AD_GetVoltage() defines (Attention: value is the index for RegularConvData_Tab)
+#define VOLTAGE_VOLTMETER			2
+#define VOLTAGE_PROTECTION			6
+#define VOLTAGE_TOUCH_UP			0
+#define VOLTAGE_TOUCH_DOWN			1
+
+//-------------------------------
+// AD_GetWaterTemperature(uint8_t Type) defines  (Attention: value is the index for RegularConvData_Tab)
+#define TEMPERATURE_INLET			5
+#define TEMPERATURE_OUTLET			3
+#define TEMPERATURE_RESISTANCE		4
+
+//-------------------------------
+// Functions Definitions
+void     AD_Init (void);
+uint16_t AD_GetVoltage(uint8_t Type);
+uint16_t AD_GetWaterTemperature(uint8_t Type);
+void     AD_Task(void);
+
+#endif
+

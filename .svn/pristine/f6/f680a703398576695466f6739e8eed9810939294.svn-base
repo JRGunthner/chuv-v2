@@ -1,0 +1,891 @@
+/* Common includes */
+#include "main.h"
+#include "string.h"
+
+/* FreeRTOS includes */
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+#include "timers.h"
+
+/* drv includes */
+#include "Display.h"
+#include "LED.h"
+#include "Bluetooth.h"
+#include "printf_lib.h"
+#include "IrDA.h"
+#include "NTC.h"
+#include "Flowmeter.h"
+#include "Triac.h"
+#include "Buzzer.h"
+#include "Debug.h"
+#include "RTCC.h"
+#include "Controller.h"
+#include "AD.h"
+#include "Touch.h"
+#include "eeprom.h"
+#include "Screen.h"
+
+/* Virtual address defined by the user: 0xFFFF value is prohibited */
+uint16_t VirtAddVarTab[NB_OF_VAR] = {0x5555, 0x6666, 0x7777};
+
+//-------------------------------------------
+// Debug Defines
+#define _DEBUG_
+//#define _DEBUG_STR_
+
+//#define _TOUCH_
+
+#if defined(_DEBUG_) || defined(_DEBUG_STR_)
+	char str_debug[40];
+	uint8_t debug_show = 4;
+    #define DEBUG_MAX 4
+#endif
+
+//-------------------------------------------
+// Users shower configuration
+uint8_t UserIndex; 		// Index of the current user
+USER 	User[6]; 		// User settings. User[0] is U6, User[1] is U1, ... , User[5] is U5
+
+//-------------------------------------------
+// Tasks Handlers
+xTaskHandle xHandle_10msTask = NULL;
+xTaskHandle xHandle_ScreenTask = NULL;
+xTaskHandle xHandle_TriacControllerTask = NULL;
+xTaskHandle xHandle_CommandsTask = NULL;
+xTaskHandle xHandle_BuzzerTask = NULL;
+xTaskHandle xHandle_PIDTask = NULL;
+#ifdef _TOUCH_
+xTaskHandle xHandle_TouchTask = NULL;
+#endif
+#ifdef _DEBUG_
+	xTaskHandle xHandle_DebugTask = NULL;
+#endif
+
+//-------------------------------------------
+// Tasks Code
+static void v10msTask (void *pvParameters);
+static void vScreenTask (void *pvParameters);
+static void vTriacControllerTask (void *pvParameters);
+static void vCommandsTask (void *pvParameters);
+static void vBuzzerTask (void *pvParameters);
+static void vPIDTask (void *pvParameters);
+#ifdef _TOUCH_
+static void vTouchTask (void *pvParameters);
+#endif
+#ifdef _DEBUG_
+	static void vDebugTask (void *pvParameters);
+#endif
+
+//-------------------------------------------
+//
+xQueueHandle CommandsQueueHandler;
+#define COMMANDS_QUEUE_SIZE 1
+
+//-------------------------------------------
+// Warnings
+#if (defined VERSION_MAJOR && VERSION_MAJOR == 0) && (defined VERSION_MINOR && VERSION_MINOR == 0)
+	#warning "Verify if firmware version in Makefile is updated (VERSION_MAJOR, VERSION_MINOR, VERSION_BUILD)"
+#endif
+
+#if (defined MYSHOWER)
+	#warning "MyShower Compilation"
+#endif
+
+#if (defined SHOWER_SHOW)
+	#warning "ShowerShow Compilation"
+#endif
+
+//====================================================================================================
+//
+//====================================================================================================
+void Init_Shower_Variables()
+{
+	CommandsQueueHandler = xQueueCreate(COMMANDS_QUEUE_SIZE, sizeof(uint32_t));
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+int main(void)
+{
+
+#ifdef _DEBUG_STR_
+	sprintf_lib(str_debug, "Shower Started - version %d.%d.%d\r\n", VERSION_MAJOR, VERSION_MINOR, VERSION_BUILD); // These defines are in makefile
+	Debug_Write(str_debug, strlen(str_debug));
+#endif
+
+	SystemInit();  					// CMSIS SystemInit clocks and PLLs
+
+	Init_Shower_Variables();        // ShowerConfiguration
+
+	RTCC_Init();
+
+	EE_Init();
+
+#ifdef _TOUCH_
+	TOUCH_Init(&CommandsQueueHandler);
+#endif
+
+	LED_Init ();
+	LED_SetMode(User[UserIndex].LedMode);
+	LED_SetFixedColor(User[UserIndex].LedColor);
+
+	Display_Init();
+
+	IrDA_Init(&CommandsQueueHandler);
+
+	Debug_Init();
+
+	Bluetooth_Init();
+
+	NTC_Init();
+
+	Flowmeter_Init();
+
+	Buzzer_Init();
+	
+	TRIAC_Init();
+
+	//-----------------------------------------------------------------------------
+	// Buzzer Task
+	//-----------------------------------------------------------------------------
+    xTaskCreate( vBuzzerTask,
+    			 "BuzzerTask",
+				 configMINIMAL_STACK_SIZE,
+				 (void *) NULL,
+				 tskIDLE_PRIORITY,
+				 xHandle_BuzzerTask);
+
+	//-----------------------------------------------------------------------------
+	// User Interface Task (Display - LED - Flowmeter)
+	//-----------------------------------------------------------------------------
+    xTaskCreate( v10msTask,
+    			 "10msTask",
+				 configMINIMAL_STACK_SIZE,
+				 (void *) NULL,
+				 tskIDLE_PRIORITY+1,
+				 xHandle_10msTask);
+
+	//-----------------------------------------------------------------------------
+	// Screen Task
+	//-----------------------------------------------------------------------------
+    xTaskCreate( vScreenTask,
+    			 "ScreenTask",
+				 configMINIMAL_STACK_SIZE,
+				 (void *) NULL,
+				 tskIDLE_PRIORITY,
+				 xHandle_ScreenTask);
+
+	//-----------------------------------------------------------------------------
+	// Commands Task
+	//-----------------------------------------------------------------------------
+	xTaskCreate( vCommandsTask,
+    			 "CommandsTask",
+				 configMINIMAL_STACK_SIZE,
+				 (void *) NULL,
+				 tskIDLE_PRIORITY,
+				 xHandle_CommandsTask);
+
+	//-----------------------------------------------------------------------------
+	// Touch Task
+	//-----------------------------------------------------------------------------
+#ifdef _TOUCH_
+    xTaskCreate( vTouchTask,
+    			 "TouchTask",
+				 configMINIMAL_STACK_SIZE,
+				 (void *) NULL,
+				 tskIDLE_PRIORITY+1,
+				 xHandle_TouchTask);
+#endif
+
+	//-----------------------------------------------------------------------------
+	// Debug Task
+	//-----------------------------------------------------------------------------
+	#ifdef _DEBUG_
+	xTaskCreate( vDebugTask,
+    			 "DebugTask",
+    			 configMINIMAL_STACK_SIZE*2,
+				 (void *) NULL,
+				 tskIDLE_PRIORITY,
+				 xHandle_DebugTask);
+	#endif
+
+	//-----------------------------------------------------------------------------
+	// PID Task
+	//-----------------------------------------------------------------------------
+	xTaskCreate( vPIDTask,
+    			 "PIDTask",
+    			 configMINIMAL_STACK_SIZE,
+				 (void *) NULL,
+				 tskIDLE_PRIORITY,
+				 xHandle_PIDTask);
+
+	//-----------------------------------------------------------------------------
+	// Triac Controller Task
+	//-----------------------------------------------------------------------------
+	xTaskCreate( vTriacControllerTask,
+    			 "TriacControllerTask",
+				 configMINIMAL_STACK_SIZE,
+				 (void *) NULL,
+				 tskIDLE_PRIORITY + 2,
+				 xHandle_TriacControllerTask);
+
+    vTaskStartScheduler();
+
+    return 0;
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+static void vCommandsTask (void *pvParameters)
+{
+	uint32_t Data[COMMANDS_QUEUE_SIZE];
+
+	for(;;)
+	{
+		xQueueReceive( CommandsQueueHandler, &Data, portMAX_DELAY );
+
+		if( (Data[0]!=E1) && (Data[0]!=E2) ) Buzzer_Beep(25, 1);
+
+		switch(Data[0])
+		{
+			//----------------------------------------------------------------------------------------------
+			case KEY_MENU:
+			{
+				// TODO: Implementar a tecla menu
+				//TE - Temperatura da agua na entrada
+				//TS - Temperatura da agua na saída
+				//LT - Litros de agua consumidos
+				//VZ - Vazao Instantanea L/m
+				//TB - Tempo de banho
+				//LG - Log do Banho (Nota - Consumo Agua - Tempo de banho - Consumo Energia)
+				//Cb - Custo mensal estimado
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case KEY_UP:
+			{
+				switch(User[UserIndex].ShowerMode)
+				{
+					case SHOWER_MODE_POWER:
+					{
+						if( User[UserIndex].PowerSetPoint < 9)	User[UserIndex].PowerSetPoint++;
+						else                                    Buzzer_Beep(40, 3);
+
+						Screen_ShowPower(User[UserIndex].PowerSetPoint);
+
+						break;
+					}
+					case SHOWER_MODE_TEMPERATURE:
+					{
+						if( User[UserIndex].TemperatureSetPoint < MAX_SETPOINT)   User[UserIndex].TemperatureSetPoint+=10;
+						else                                                      Buzzer_Beep(40, 3);
+
+						Screen_ShowSetPoint(User[UserIndex].TemperatureSetPoint);
+
+						break;
+					}
+					default:
+					{
+						// TODO: Ver codigo para o default
+						break;
+					}
+				}
+
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case KEY_DOWN:
+			{
+
+				switch (User[UserIndex].ShowerMode)
+				{
+					case SHOWER_MODE_POWER:
+					{
+						if( User[UserIndex].PowerSetPoint > 0)  User[UserIndex].PowerSetPoint--;
+						else                                    Buzzer_Beep(40, 3);
+
+						Screen_ShowPower(User[UserIndex].PowerSetPoint);
+
+						break;
+					}
+					case SHOWER_MODE_TEMPERATURE:
+					{
+						// TODO: Lower temperature must be equal to the inlet temperature
+						if( User[UserIndex].TemperatureSetPoint > MIN_SETPOINT )  User[UserIndex].TemperatureSetPoint-=10;
+						else                                                      Buzzer_Beep(40, 3);
+
+						Screen_ShowSetPoint(User[UserIndex].TemperatureSetPoint);
+
+						break;
+					}
+					default:
+					{
+						// TODO: Ver codigo para o default
+						break;
+					}
+				}
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case KEY_USER:
+			{
+				if( UserIndex >= 5 ) UserIndex = 0;
+				else                 UserIndex++;
+
+				Screen_ShowUser( UserIndex );
+
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case KEY_LED_OFF:
+			{
+				static uint8_t Last_LedMode;
+
+				if( User[UserIndex].LedMode != LED_MODE_OFF)
+				{
+					Last_LedMode = User[UserIndex].LedMode;
+					User[UserIndex].LedMode = LED_MODE_OFF;
+					Screen_ShowMessage( "  Led Off  ", 11 );
+				}
+				else
+				{
+					User[UserIndex].LedMode = Last_LedMode;
+					Screen_ShowMessage( "  Led On  ", 10 );
+				}
+
+				LED_SetMode(User[UserIndex].LedMode);
+
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case KEY_LED_AUTO:
+			{
+				if( User[UserIndex].LedMode == LED_MODE_POWER )
+				{
+					User[UserIndex].LedMode = LED_MODE_TEMPERATURE;
+					Screen_ShowMessage( "  Led Temperatura  ", 19 );
+				}
+				else if( User[UserIndex].LedMode == LED_MODE_TEMPERATURE  )
+				{
+					User[UserIndex].LedMode = LED_MODE_AUTO;
+					Screen_ShowMessage( "  Led Auto  ", 12 );
+				}
+				else if( User[UserIndex].LedMode == LED_MODE_AUTO  )
+				{
+					User[UserIndex].LedMode = LED_MODE_FIXED;
+					User[UserIndex].LedColor = LED_GetColor();
+					LED_SetFixedColor(User[UserIndex].LedColor);
+
+					Screen_ShowMessage( "  Led Fixo  ", 12 );
+				}
+				else if( User[UserIndex].LedMode == LED_MODE_FIXED  )
+				{
+					User[UserIndex].LedMode = LED_MODE_POWER;
+					Screen_ShowMessage( "  Led Potencia  ", 16 );
+				}
+				else
+				{
+					Screen_ShowMessage( "  Led Off  ", 11 );
+				}
+
+				LED_SetMode(User[UserIndex].LedMode);
+
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case KEY_BIP:
+			{
+				if( User[UserIndex].Buzzer == BUZZER_MODE_OFF)
+				{
+					User[UserIndex].Buzzer = BUZZER_MODE_ON;
+					Screen_ShowMessage( "  Bip On  ", 10 );
+					Buzzer_Control(BUZZER_ON);
+				}
+				else
+				{
+					User[UserIndex].Buzzer = BUZZER_MODE_OFF;
+					Screen_ShowMessage( "  Bip Off  ", 11 );
+					Buzzer_Control(BUZZER_OFF);
+				}
+
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case KEY_TEMPERATURE:
+			{
+				if( User[UserIndex].ShowerMode == SHOWER_MODE_POWER)
+				{
+					Controller_ResetPID();
+				}
+
+				User[UserIndex].ShowerMode = SHOWER_MODE_TEMPERATURE;
+				Screen_ShowSetPoint(User[UserIndex].TemperatureSetPoint);
+
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case KEY_POWER:
+			{
+				User[UserIndex].ShowerMode = SHOWER_MODE_POWER;
+				Screen_ShowPower(User[UserIndex].PowerSetPoint);
+
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case KEY_TIMER:
+			{
+				// TODO: Implementar KEY_TIMER
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case KEY_LITERS:
+			{
+				// TODO: Implementar KEY_LITERS
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case E1:
+			{
+
+				extern uint16_t teste123;
+
+				teste123 = teste123 + 100;
+
+				//LED_Enable(LED_ENABLED);
+//				#ifdef _DEBUG_
+//					debug_show++;
+//					if( debug_show>DEBUG_MAX ) debug_show = 0;
+//				#endif
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			case E2:
+			{
+				extern uint16_t teste123;
+
+				if(teste123 >= 100) teste123 = teste123 - 100;
+
+				//LED_Enable(LED_DISABLE);
+				break;
+			}
+			//----------------------------------------------------------------------------------------------
+			default:
+			{
+				break;
+			}
+		}
+	}
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+static void vTriacControllerTask (void *pvParameters)
+{
+	uint8_t Power;
+	uint8_t State;
+
+	enum { CONTROLLER_ON, CONTROLLER_OFF, CONTROLLER_WAIT };
+
+	State = CONTROLLER_OFF;
+	Power = 0;
+
+	vTaskDelay( 2000 );
+
+	LED_Enable(LED_DISABLE);
+
+	for (;;)
+	{
+		TRIAC_LostEdges();
+
+		//---------------------------------------------
+		// State Machine Control (Controlled by Water Flow)
+		switch(State)
+		{
+			//----------------------
+			case CONTROLLER_ON:
+			{
+				if( Flowmeter_GetFlow() < FLOW_OFF )
+				{
+					LED_Enable(LED_DISABLE);
+					State = CONTROLLER_WAIT;
+				}
+				break;
+			}
+			//----------------------
+			case CONTROLLER_OFF:
+			{
+				if( Flowmeter_GetFlow() > FLOW_ON )
+				{
+					Buzzer_Beep(50,2);
+					Controller_ResetPID();
+					LED_Enable(LED_ENABLED);
+					State = CONTROLLER_ON;
+				}
+				break;
+			}
+			//----------------------
+			case CONTROLLER_WAIT:
+			{
+				// TODO: implemetar logica para aguardar um tempo ate religar o controle isso é devido a energia já acumulada na resistencia
+				State = CONTROLLER_OFF;
+				break;
+			}
+			//----------------------
+			default:
+			{
+				State = CONTROLLER_OFF;
+				break;
+			}
+		}
+
+		//---------------------------------------------
+		// Apply power according to user configuration SHOWER_MODE_TEMPERATURE or SHOWER_MODE_POWER
+		if( State ==  CONTROLLER_ON )
+		{
+			if( User[UserIndex].ShowerMode == SHOWER_MODE_TEMPERATURE )
+			{
+				Screen_SetMainScreen(SCREEN_MAIN_TEMPERATURE);
+				Power = Controller_Task(User[UserIndex].TemperatureSetPoint);
+			}
+			else // SHOWER_MODE_POWER
+			{
+				Screen_SetMainScreen(SCREEN_MAIN_POWER);
+				Power = User[UserIndex].PowerSetPoint*11;
+			}
+		}
+		else
+		{
+			Screen_SetMainScreen(SCREEN_MAIN_IDLE);
+			Power = 0;
+		}
+
+		//---------------------------------------------
+		// TODO: Protecao para sobre tensao
+
+		//---------------------------------------------
+		// Max Temperature Protection
+		if( (NTC_GetWaterTemperature(TEMPERATURE_OUTLET) > MAX_TEMPERATURE) || (NTC_GetWaterTemperature(TEMPERATURE_RESISTANCE) > MAX_TEMPERATURE) )
+		{
+			Power = 0;
+		}
+
+		//---------------------------------------------
+		// Set Triac power
+		TRIAC_SetPower(Power);
+
+		//---------------------------------------------
+		// Time delay for hysteresis
+		if( State ==  CONTROLLER_WAIT )
+		{
+			vTaskDelay( 1000 ); // TODO: este delay vai depender da temperatura na resistencia.
+		}
+		else
+		{
+			vTaskDelay( 100 );
+		}
+	}
+
+	vTaskDelete(NULL);
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+static void vBuzzerTask (void *pvParameters)
+{
+	vTaskDelay( 50 );
+
+	Buzzer_Beep(50,2);
+
+	for (;;)
+	{
+		Buzzer_Task();
+	}
+
+	vTaskDelete(NULL);
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+static void vPIDTask (void *pvParameters)
+{
+	for (;;)
+	{
+		PID_Task();
+
+		vTaskDelay( 150 );
+	}
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+static void vScreenTask (void *pvParameters)
+{
+	Display_Version(VERSION_MAJOR, VERSION_MINOR);
+
+	vTaskDelay(2000);
+
+#ifdef SHOWER_SHOW
+	Screen_ShowMessage( "  ShowerShow  " , 14 );
+#else
+	Screen_ShowMessage( "  MyShower  " , 12 );
+#endif
+
+	for (;;)
+	{
+		Screen_Task();
+	}
+
+	vTaskDelete(NULL);
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+static void v10msTask (void *pvParameters)
+{
+	uint8_t count = 0;
+
+	for (;;)
+	{
+		Display_Task();
+		LED_Task();
+
+		if( count > 10)
+		{
+			count = 0;
+			Flowmeter_Task();
+		}
+
+		count++;
+
+		vTaskDelay(10);
+	}
+
+	vTaskDelete(NULL);
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+#ifdef _TOUCH_
+static void vTouchTask (void *pvParameters)
+{
+	extern int32_t MeanDeltaUp;
+	extern int32_t MeanDeltaDown;
+
+	for (;;)
+	{
+		TOUCH_Task();
+		sprintf_lib(str_debug, "%d %d 0 0 \n", MeanDeltaUp, MeanDeltaDown );
+		//Debug_Write(str_debug, strlen(str_debug));
+		Bluetooth_Write(str_debug, strlen(str_debug));
+	}
+
+	vTaskDelete(NULL);
+}
+#endif
+
+//====================================================================================================
+//
+//====================================================================================================
+#ifdef _DEBUG_
+static void vDebugTask (void *pvParameters)
+{
+
+//	extern uint16_t TemperatureSetPoint;
+//
+//	extern uint16_t ucOffsetPID;
+//	extern uint16_t ucMaximoPID;
+//
+//	extern int16_t DerivadaFluxo;
+//	extern uint16_t TemperaturaEntrada;
+//	extern uint16_t TemperaturaSaida;
+//	extern int16_t FluxoAgua;
+//	extern int8_t Saida_PID;
+//	extern int8_t uiPower;
+//
+//	extern uint32_t Frequency;
+//	extern uint16_t Flow;
+
+	for (;;)
+	{
+		#ifdef _DEBUG_
+//			if( debug_show == 0 )
+//			{
+				sprintf_lib(str_debug, "0 %d ", NTC_GetWaterTemperature(TEMPERATURE_INLET) );
+				Debug_Write(str_debug, strlen(str_debug));
+
+				sprintf_lib(str_debug, "%d ", NTC_GetWaterTemperature(TEMPERATURE_RESISTANCE) );
+				Debug_Write(str_debug, strlen(str_debug));
+
+				sprintf_lib(str_debug, "%d ", NTC_GetWaterTemperature(TEMPERATURE_OUTLET) );
+				Debug_Write(str_debug, strlen(str_debug));
+
+				sprintf_lib(str_debug, "%d ", Flowmeter_GetFlow()/10 );
+				Debug_Write(str_debug, strlen(str_debug));
+
+				sprintf_lib(str_debug, "%d ", Flowmeter_GetFlowDerivative() );
+				Debug_Write(str_debug, strlen(str_debug));
+
+				sprintf_lib(str_debug, "%d ", TRIAC_GetPower() );
+				Debug_Write(str_debug, strlen(str_debug));
+
+				sprintf_lib(str_debug, "%d 0\n", User[UserIndex].TemperatureSetPoint );
+				Debug_Write(str_debug, strlen(str_debug));
+//			}
+//			else if( debug_show == 1 )
+//			{
+//				sprintf_lib(str_debug, "1 %d ", TemperatureSetPoint );
+//				Debug_Write(str_debug, strlen(str_debug));
+//
+//				sprintf_lib(str_debug, "%d ", ucOffsetPID );
+//				Debug_Write(str_debug, strlen(str_debug));
+//
+//				sprintf_lib(str_debug, "%d ", ucMaximoPID );
+//				Debug_Write(str_debug, strlen(str_debug));
+//
+//				sprintf_lib(str_debug, "%d ", DerivadaFluxo );
+//				Debug_Write(str_debug, strlen(str_debug));
+//
+//				sprintf_lib(str_debug, "%d ", TemperaturaEntrada );
+//				Debug_Write(str_debug, strlen(str_debug));
+//
+//				sprintf_lib(str_debug, "%d ", TemperaturaSaida );
+//				Debug_Write(str_debug, strlen(str_debug));
+//
+//				sprintf_lib(str_debug, "%d ", FluxoAgua );
+//				Debug_Write(str_debug, strlen(str_debug));
+//
+//				sprintf_lib(str_debug, "%d ", Saida_PID );
+//				Debug_Write(str_debug, strlen(str_debug));
+//
+//				sprintf_lib(str_debug, "%d\n", uiPower );
+//				Debug_Write(str_debug, strlen(str_debug));
+//			}
+//			else if( debug_show == 2 )
+//			{
+//				sprintf_lib(str_debug, "2 %d ", AD_GetValue(AD_VOLTMETER) );
+//				Debug_Write(str_debug, strlen(str_debug));
+//				Bluetooth_Write(str_debug, strlen(str_debug));
+//
+//				sprintf_lib(str_debug, "%d ", AD_GetValue(AD_NTC1) );
+//				Debug_Write(str_debug, strlen(str_debug));
+//				Bluetooth_Write(str_debug, strlen(str_debug));
+//
+//				sprintf_lib(str_debug, "%d ", AD_GetValue(AD_NTC2) );
+//				Debug_Write(str_debug, strlen(str_debug));
+//				Bluetooth_Write(str_debug, strlen(str_debug));
+//
+//				sprintf_lib(str_debug, "%d ", AD_GetValue(AD_NTC3) );
+//				Debug_Write(str_debug, strlen(str_debug));
+//				Bluetooth_Write(str_debug, strlen(str_debug));
+//
+//				sprintf_lib(str_debug, "%d ", AD_GetValue(AD_PROCESSOR_TEMPERATURE_SENSOR) );
+//				Debug_Write(str_debug, strlen(str_debug));
+//				Bluetooth_Write(str_debug, strlen(str_debug));
+//
+//				sprintf_lib(str_debug, "%d ", AD_GetValue(AD_VOLTAGE_REFERENCE) );
+//				Debug_Write(str_debug, strlen(str_debug));
+//				Bluetooth_Write(str_debug, strlen(str_debug));
+//
+//				sprintf_lib(str_debug, "0 0 0\n");
+//				Debug_Write(str_debug, strlen(str_debug));
+//			}
+//			else if( debug_show == 3 )
+//			{
+//				RTCC_TimeDateTypeDef RTCC;
+//
+//				RTCC_GetTimeDate(&RTCC);
+//
+//				sprintf_lib(str_debug, "3 %d %d %d %d %d %d 0 0 0 0 0 0\r\n",	RTCC.Date,
+//																				RTCC.Month,
+//																				RTCC.Year,
+//																				RTCC.Hours,
+//																				RTCC.Minutes,
+//																				RTCC.Seconds );
+//				Debug_Write(str_debug, strlen(str_debug));
+//			}
+//			else if( debug_show == 4 )
+//			{
+//
+//				sprintf_lib(str_debug, "4 %d ", Frequency );
+//				Debug_Write(str_debug, strlen(str_debug));
+//
+//				sprintf_lib(str_debug, "%d ", TIM15->CCR1 );
+//				Debug_Write(str_debug, strlen(str_debug));
+//
+//				sprintf_lib(str_debug, "%d ", TIM15->CCR2 );
+//				Debug_Write(str_debug, strlen(str_debug));
+//
+//				sprintf_lib(str_debug, "%d ", Flow );
+//				Debug_Write(str_debug, strlen(str_debug));
+//
+//				sprintf_lib(str_debug, "0 0 0 0 0 0\r\n" );
+//				Debug_Write(str_debug, strlen(str_debug));
+//			}
+		#endif
+
+		//if( debug_show == 3 ) vTaskDelay(1000);
+		//else
+		vTaskDelay(100);
+	}
+}
+#endif
+
+//====================================================================================================
+//
+//====================================================================================================
+void vApplicationIdleHook( void )
+{
+	/* vApplicationIdleHook() will only be called if configUSE_IDLE_HOOK is set
+	to 1 in FreeRTOSConfig.h.  It will be called on each iteration of the idle
+	task.  It is essential that code added to this hook function never attempts
+	to block in any way (for example, call xQueueReceive() with a block time
+	specified, or call vTaskDelay()).  If the application makes use of the
+	vTaskDelete() API function (as this demo application does) then it is also
+	important that vApplicationIdleHook() is permitted to return to its calling
+	function, because it is the responsibility of the idle task to clean up
+	memory allocated by the kernel to any task that has since been deleted. */
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+void vApplicationStackOverflowHook( xTaskHandle pxTask, signed char *pcTaskName )
+{
+	( void ) pcTaskName;
+	( void ) pxTask;
+
+	/* Run time stack overflow checking is performed if
+	configCHECK_FOR_STACK_OVERFLOW is defined to 1 or 2.  This hook
+	function is called if a stack overflow is detected. */
+	taskDISABLE_INTERRUPTS();
+
+	// TODO - Desabilitar as interrupccoes de hardware ou pelo menos a do triac
+
+	for( ;; );
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+void vApplicationTickHook( void )
+{
+	/* This function will be called by each tick interrupt if
+	configUSE_TICK_HOOK is set to 1 in FreeRTOSConfig.h.  User code can be
+	added here, but the tick hook is called from an interrupt context, so
+	code must not attempt to block, and only the interrupt safe FreeRTOS API
+	functions can be used (those that end in FromISR()). */
+}
+
+
+
+
+

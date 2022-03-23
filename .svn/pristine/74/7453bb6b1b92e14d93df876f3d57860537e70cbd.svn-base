@@ -1,0 +1,54 @@
+#ifndef __MAIN_H
+#define __MAIN_H
+
+#include "stm32f0xx.h"
+
+// User Shower Mode
+#define SHOWER_MODE_TEMPERATURE 0x01
+#define SHOWER_MODE_POWER		0x02
+
+// User Led Mode
+#define LED_MODE_OFF			0x01
+#define LED_MODE_TEMPERATURE    0x02
+#define LED_MODE_POWER			0x03
+#define LED_MODE_AUTO			0x04
+#define LED_MODE_FIXED			0x05
+
+// User Display Modes
+#define DISPLAY_OFF				0x01
+#define DISPLAY_FLOW			0x02
+#define DISPLAY_TEMPERATURE     0x03
+#define DISPLAY_POWER			0x04
+#define DISPLAY_SETPOINT        0x05
+
+// Buzzer Mode
+#define BUZZER_MODE_ON    		0x0F
+#define BUZZER_MODE_OFF   		0xF0
+
+// Initial Temperature Limit
+#define TEMPERATURE_LIMIT_ON    0x0F
+#define TEMPERATURE_LIMIT_OFF   0xF0
+
+// User Temperature SetPoint
+#define DEFAULT_SETPOINT  		365
+#define MIN_SETPOINT	  		205
+#define MAX_SETPOINT	  		455
+
+// Temperature Protection
+#define MAX_TEMPERATURE 		499
+
+
+typedef struct
+{
+	uint8_t  DisplayMode;		    // TODO - Revisar o uso desta variavel
+	uint8_t  ShowerMode;			// Shower Mode Power/Temperature
+	uint8_t  LedMode;			    // Led Mode Off/Auto/Fixed
+	uint8_t  LedColor;			    // Fixed Led color according to the list in LED.h
+	uint16_t TemperatureSetPoint;	// User temperature
+	uint8_t  PowerSetPoint;		    // User power
+	uint8_t MaxTemperatureLimit; 	// Initial temperature limit on/off
+	uint8_t Buzzer;					// Buzzer on/off
+} USER;
+
+
+#endif /* __MAIN_H */

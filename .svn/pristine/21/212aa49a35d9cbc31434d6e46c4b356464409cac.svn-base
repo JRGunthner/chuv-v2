@@ -1,0 +1,28 @@
+#ifndef __USER_H
+#define __USER_H
+
+#include "stm32f0xx.h"
+
+typedef struct
+{
+	uint8_t  ShowerMode;			// Shower Mode Power/Temperature
+	uint8_t  LedMode;			    // Led Mode Off/Auto/Fixed
+	uint8_t  LedColor;			    // Fixed Led color according to the list in LED.h
+	uint16_t TemperatureSetPoint;	// User temperature
+	uint8_t  PowerSetPoint;		    // User power
+	uint8_t  MaxTemperatureLimit; 	// Initial temperature limit on/off
+	uint8_t  Buzzer;				// Buzzer on/off
+} USER1;
+
+//-------------------------------
+// Functions Definitions
+void User_Init_Shower_Variables(uint8_t  UserShowerMode,
+								uint8_t  UserLedMode,
+								uint8_t  UserLedColor,
+								uint16_t UserTemperatureSetPoint,
+								uint8_t  UserPowerSetPoint,
+								uint8_t  UserBuzzer,
+								uint8_t  UserMaxTemperatureLimit);
+
+
+#endif // __USER_H

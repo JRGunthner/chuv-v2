@@ -1,0 +1,79 @@
+#ifndef __MAIN_H
+#define __MAIN_H
+
+// Shower Mode
+#define SHOWER_MODE_TEMPERATURE 0xF0
+#define SHOWER_MODE_POWER		0x0F
+
+// Led Mode
+#define LED_MODE_OFF			0x01
+#define LED_MODE_TEMPERATURE    0x02
+#define LED_MODE_POWER			0x03
+#define LED_MODE_AUTO			0x04
+#define LED_MODE_FIXED			0x05
+
+// Display Modes
+#define DISPLAY_OFF				0x01
+#define DISPLAY_FLOW			0x02
+#define DISPLAY_TEMPERATURE     0x03
+#define DISPLAY_POWER			0x04
+
+
+// Buzzer Mode
+#define BUZZER_MODE_ON    		0x0F
+#define BUZZER_MODE_OFF   		0xF0
+
+// Initial Temperature Limit
+#define TEMPERATURE_LIMIT_ON    0x0F
+#define TEMPERATURE_LIMIT_OFF   0xF0
+
+//
+#define MAX_TEMPERATURE 45
+
+
+typedef struct
+{
+	uint8_t DisplayMode;
+	uint8_t ShowerMode;			// Shower Mode Power/Temperature
+	uint8_t LedMode;			// Led Mode Off/Auto/Fixed
+	uint8_t LedColor;			// Led color according to the list in LED.h
+	uint8_t ShowerTemperature;	// User temperature setting
+	uint8_t ShowerPower;		// User power setting
+} USER;
+
+struct ShowerConfiguration
+{
+	uint8_t MaxTemperatureLimit; 	// Initial temperature limit on/off
+	uint8_t Buzzer;					// Buzzer on/off
+	uint8_t CurrentUserIndex; 		// Index of the current user
+	USER 	User[6]; 		  		// User settings. User[0] is U6, User[1] is U1, ... , User[5] is U5
+};
+
+/*struct ShowerCurrentState
+{
+	//int32_t SensorInputTemperature;		// Input Water temperature Sensor (celsius degrees)
+	//int32_t SensorOutputTemperature;	// Output Water temperature Sensor(celsius degrees)
+	//int32_t SensorResistanceTemperature;// Water temperature Sensor (read from resistance element - celsius degrees)
+	int32_t SensorVoltmeter;			// Volts Sensor reading from power input
+	//int32_t SensorFlowmeter;			// Flow Sensor from flowmeter sensor (L/min)
+	//uint8_t ShowerPower;			    // This is the official Power (be careful to Only allow PIDTask to change this)
+};*/
+
+struct Erros
+{
+	uint32_t Error;
+
+	uint32_t T1_ErrorCounter;
+	uint32_t T2_ErrorCounter;
+	uint32_t E0_ErrorCounter;
+	uint32_t E1_ErrorCounter;
+	uint32_t E2_ErrorCounter;
+	uint32_t E3_ErrorCounter;
+	uint32_t E4_ErrorCounter;
+	uint32_t E5_ErrorCounter;
+
+	uint32_t EdgesLostCounter;
+};
+
+
+#endif /* __MAIN_H */

@@ -1,0 +1,339 @@
+#include "Screen.h"
+#include "NTC.h"
+
+#define SCREEN_BUFFER_LEN 20
+
+
+
+static uint8_t Time = 0;
+uint8_t DisplayBuffer[SCREEN_BUFFER_LEN];
+
+uint8_t MainScreen = SCREEN_MAIN_IDLE;
+uint8_t Screen = SCREEN_MAIN;
+uint8_t iSize = 0;
+uint8_t iSizeAux = 0;
+uint16_t sleep = 0;
+
+
+uint8_t MenuScreen = 0;
+
+uint8_t NextScreenMsg = SCREEN_MAIN;
+
+uint16_t ScreenTemp;
+uint16_t ScreenUser;
+
+int32_t DValue;
+
+#define TIMEOUT_SCREEN_VERSION     40   // 2s
+#define TIMEOUT_SCREEN_FLOW        40   // 4s
+#define TIMEOUT_SCREEN_SETPOINT    40   // 2s
+#define TIMEOUT_SCREEN_USER        40   // 2s
+#define TIMEOUT_SCREEN_POWER       40   // 2s
+#define TIMEOUT_SCREEN_MENU_MSG    20   // 2s
+#define TIMEOUT_SCREEN_MENU_DATA   40   // 2s
+#define TIMEOUT_SCREEN_LITERS      40   // 2s
+
+//==================================================================================================
+//
+//==================================================================================================
+void Screen_Task()
+{
+    switch( Screen )
+	{
+		//--------------------------------------------
+		case SCREEN_MSG:
+		{
+			Display_UpdateChar(DisplayBuffer[iSizeAux] , DisplayBuffer[iSizeAux+1] );
+			iSizeAux = iSizeAux+1;
+			if(iSizeAux >  iSize)
+			{
+				iSize = 0;
+				iSizeAux = 0;
+				Time = 0;
+				Screen = NextScreenMsg;
+			}
+			break;
+		}
+		//--------------------------------------------
+		case SCREEN_MAIN:
+		{
+			if( MainScreen == SCREEN_MAIN_POWER ) //POWER
+			{
+				Display_UpdateChar('P',ScreenTemp);
+			}
+			else if( MainScreen == SCREEN_MAIN_TEMPERATURE) //TEMPERATURE
+			{
+				Display_UpdateValue(NTC_GetWaterTemperature(TEMPERATURE_OUTLET));
+			}
+			else //IDLE
+			{
+				Display_UpdateChar('-','-');
+			}
+
+			break;
+		}
+		//--------------------------------------------
+		case SCREEN_FLOW:
+		{
+			//Display_UpdateValue(Flowmeter_GetFlow()/10);
+			Display_UpdateChar('F','L');
+			if( Time++> TIMEOUT_SCREEN_FLOW)
+			{
+				Time = 0;
+				Screen = SCREEN_MAIN;
+			}
+			break;
+		}
+		//--------------------------------------------
+		case SCREEN_POWER:
+		{
+			//Display_UpdateValue(User[UserIndex].TemperatureSetPoint);
+			Display_UpdateChar('P',ScreenTemp);
+			if( Time++> TIMEOUT_SCREEN_POWER)
+			{
+				Time = 0;
+				Screen = SCREEN_MAIN;
+			}
+			break;
+		}
+		//--------------------------------------------
+		case SCREEN_SETPOINT:
+		{
+			Display_UpdateValue(ScreenTemp);
+			Display_UpdatePoints(1, DISPLAY_POINT_MIDDLE | DISPLAY_POINT_RIGHT);
+			if( Time++> TIMEOUT_SCREEN_SETPOINT)
+			{
+				Display_UpdatePoints(0, DISPLAY_POINT_MIDDLE | DISPLAY_POINT_RIGHT);
+				Time = 0;
+				Screen = SCREEN_MAIN;
+			}
+			break;
+		}
+		//--------------------------------------------
+		case SCREEN_USER:
+		{
+            Display_UpdateChar('u',ScreenUser);
+			if( Time++> TIMEOUT_SCREEN_USER)
+			{
+				Time = 0;
+				Screen = SCREEN_MAIN;
+			}
+			break;
+		}
+		//--------------------------------------------
+		case SCREEN_LITERS:
+		{
+            Display_UpdateChar('N','A');
+			if( Time++> TIMEOUT_SCREEN_LITERS)
+			{
+				Time = 0;
+				Screen = SCREEN_MAIN;
+			}
+			break;
+		}
+		//--------------------------------------------
+		case SCREEN_MENU:
+		{
+			Time++;
+
+			if( MenuScreen == SCREEN_MENU_TE )
+			{
+				if( Time < TIMEOUT_SCREEN_MENU_MSG)
+				{
+					Display_UpdateChar('T','E');
+				}
+				else
+				{
+					Display_UpdateValue(NTC_GetWaterTemperature(TEMPERATURE_INLET));
+				}
+			}
+			else if( MenuScreen == SCREEN_MENU_TS )
+			{
+				if( Time < TIMEOUT_SCREEN_MENU_MSG)
+				{
+					Display_UpdateChar('T','S');
+				}
+				else
+				{
+					Display_UpdateValue(NTC_GetWaterTemperature(TEMPERATURE_OUTLET));
+				}
+			}
+			else if( MenuScreen == SCREEN_MENU_LT	)
+			{
+				if( Time < TIMEOUT_SCREEN_MENU_MSG)
+				{
+					Display_UpdateChar('L','T');
+				}
+				else
+				{
+					Display_UpdateChar('N','A');
+				}
+			}
+			else if( MenuScreen == SCREEN_MENU_VZ	)
+			{
+				if( Time < TIMEOUT_SCREEN_MENU_MSG)
+				{
+					Display_UpdateChar('V','Z');
+				}
+				else
+				{
+					Display_UpdateValue(Flowmeter_GetFlow()/10);
+				}
+			}
+			else if( MenuScreen == SCREEN_MENU_TB	)
+			{
+				if( Time < TIMEOUT_SCREEN_MENU_MSG)
+				{
+					Display_UpdateChar('T','B');
+				}
+				else
+				{
+					Display_UpdateChar('N','A');
+				}
+			}
+			else if( MenuScreen == SCREEN_MENU_LG	)
+			{
+				if( Time < TIMEOUT_SCREEN_MENU_MSG)
+				{
+					Display_UpdateChar('L','G');
+				}
+				else
+				{
+					Display_UpdateChar('N','A');
+				}
+			}
+			else if( MenuScreen == SCREEN_MENU_CB	)
+			{
+				if( Time < TIMEOUT_SCREEN_MENU_MSG)
+				{
+					Display_UpdateChar('C','B');
+				}
+				else
+				{
+					Display_UpdateChar('N','A');
+				}
+			}
+
+			if( Time > (TIMEOUT_SCREEN_MENU_MSG + TIMEOUT_SCREEN_MENU_DATA) )
+			{
+				MenuScreen = 0;
+				Time = 0;
+				Screen = SCREEN_MAIN;
+			}
+			break;
+		}
+	}
+
+    if( Screen == SCREEN_MSG)
+    {
+    	vTaskDelay(600);
+    }
+    else
+    {
+    	vTaskDelay(100);
+    }
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Screen_ShowVersion()
+{
+	Display_UpdateDecimal(0, 0);
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Screen_ShowMenu()
+{
+	if( MenuScreen < SCREEN_MENU_CB)
+	{
+		MenuScreen++;
+	}
+	else
+	{
+		MenuScreen = 1;
+	}
+
+	Time = 0;
+
+	Screen = SCREEN_MENU;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Screen_ShowFlow()
+{
+	Time = 0;
+	Screen = SCREEN_FLOW;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Screen_ShowSetPoint( uint16_t SP )
+{
+	Time = 0;
+	ScreenTemp = SP;
+	Screen = SCREEN_SETPOINT;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Screen_ShowPower(uint8_t Power )
+{
+	Time = 0;
+	ScreenTemp = Power+0x30;
+	Screen = SCREEN_POWER;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Screen_ShowUser( uint8_t User )
+{
+	Time = 0;
+	ScreenUser = User+0x30;
+	if(User == 0) ScreenUser = ScreenUser+6;
+	Screen = SCREEN_USER;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Screen_ShowMessage( char *Buff, uint8_t SizeBuff, uint8_t NextScreen )
+{
+	sprintf( (char*)DisplayBuffer, "%s", Buff);
+	iSize = SizeBuff;
+	iSizeAux = 0;
+	Screen = SCREEN_MSG;
+	NextScreenMsg = NextScreen;
+
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Screen_SetMainScreen( uint8_t Scr )
+{
+	MainScreen = Scr;
+}
+
+//==================================================================================================
+//
+//=================================================================================================
+void Screen_ShowLiTers()
+{
+	Screen_ShowMessage( "  Litros  ", 9, SCREEN_LITERS );
+}
+
+//==================================================================================================
+//
+//=================================================================================================
+void Screen_ShowTimer()
+{
+	Screen_ShowMessage( "  Senha  ", 9, SCREEN_LITERS );
+}

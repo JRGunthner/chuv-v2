@@ -1,0 +1,151 @@
+#include "Touch.h"
+#include "AD.h"
+#include "PWM.h"
+
+#define TOUCH_BUFFER_LEN 10
+
+uint16_t Buffer_Touch_Up[TOUCH_BUFFER_LEN];
+uint16_t Buffer_Touch_Down[TOUCH_BUFFER_LEN];
+
+uint32_t LastMeanUp = 0;
+uint32_t LastMeanDown = 0;
+
+uint32_t MeanUp = 0;
+uint32_t MeanDown = 0;
+
+uint8_t CountUp = 0;
+uint8_t CountDown = 0;
+
+xQueueHandle *TouchQueueHandler;
+
+//==================================================================================================
+//
+//==================================================================================================
+void TOUCH_Init (xQueueHandle *QueueHandler)
+{
+	PWM_Init();
+	AD_Init();
+
+	TouchQueueHandler = QueueHandler;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+uint32_t TOUCH_GetArithmeticMeanUp (void)
+{
+	return MeanUp;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+uint32_t TOUCH_GetArithmeticMeanDown (void)
+{
+	return MeanDown;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+uint32_t TOUCH_GetWeightedArithmeticMeanUp (void)
+{
+//	uint8_t i;
+//	uint32_t Mean = 0;
+//
+//	for(i=0; i<5; i++ )
+//	{
+//		Mean = Mean + (Buffer_Touch_Up[i]*(5-i));
+//	}
+//
+//	return Mean/15;
+
+	return 0;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+uint32_t TOUCH_GetWeightedArithmeticMeanDown (void)
+{
+//	uint8_t i;
+//	uint32_t Mean = 0;
+//
+//	for(i=0; i<5; i++ )
+//	{
+//		Mean = Mean + (Buffer_Touch_Down[i]*(5-i));
+//	}
+//
+//	return Mean/15;
+
+	return 0;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void TOUCH_Task (void)
+{
+	uint32_t Data;
+	uint8_t i;
+
+	//for(i=0; i<100; i++)
+	{
+		static portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
+
+		uint8_t j;
+		uint32_t MeanUpAux = 0;
+		uint32_t MeanDownAux = 0;
+
+		for( j=1; j<TOUCH_BUFFER_LEN; j++)
+		{
+			Buffer_Touch_Up[j] = Buffer_Touch_Up[j-1];
+			Buffer_Touch_Down[j] = Buffer_Touch_Down[j-1];
+		}
+
+		Buffer_Touch_Up[0]   = AD_GetValue(AD_TOUCH_UP);
+		Buffer_Touch_Down[0] = AD_GetValue(AD_TOUCH_DOWN);
+
+		for(j=0; j<TOUCH_BUFFER_LEN; j++ )
+		{
+			MeanUpAux = MeanUpAux + Buffer_Touch_Up[j];
+			MeanDownAux = MeanDownAux + Buffer_Touch_Down[j];
+		}
+
+		LastMeanUp = MeanUp;
+		LastMeanDown = MeanDown;
+
+		MeanUp = MeanUpAux/TOUCH_BUFFER_LEN;
+		MeanDown = MeanDownAux/TOUCH_BUFFER_LEN;
+
+		if(  (int32_t)(MeanUp - LastMeanUp) > 800  )
+		{
+			//LastMeanUp = MeanUp;
+			CountUp++;
+		}
+
+		if(  (int32_t)(MeanDown - LastMeanDown) > 800  )
+		{
+			//LastMeanDown = MeanDown;
+			CountDown++;
+		}
+
+		if( (CountDown > 3) || (CountUp > 3) )
+		{
+
+			Data = 0;
+
+			/*if( (CountDown > 5) && (CountUp > 5) )  Data = 0x24DBA15E;
+			else*/ if (CountDown > 3) Data = 0x24DB09F6;
+			else if (CountUp > 3)   Data = 0x24DB51AE;
+
+			CountUp = 0;
+			CountDown = 0;
+			xQueueSendFromISR(*TouchQueueHandler, &Data, &xHigherPriorityTaskWoken);
+			if(Data != 0) vTaskDelay(500);
+			//break;
+		}
+	}
+
+	vTaskDelay(10);
+}

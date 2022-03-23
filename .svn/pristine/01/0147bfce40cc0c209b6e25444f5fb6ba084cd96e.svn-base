@@ -1,0 +1,831 @@
+/* Common includes */
+#include "main.h"
+#include "string.h"
+
+/* FreeRTOS includes */
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+#include "timers.h"
+
+/* drv includes */
+#include "Display.h"
+#include "LED.h"
+#include "Bluetooth.h"
+#include "printf_lib.h"
+#include "IrDA.h"
+#include "AD.h"
+#include "Flowmeter.h"
+#include "Triac.h"
+#include "Buzzer.h"
+#include "Debug.h"
+#include "RTCC.h"
+#include "Controller.h"
+
+#define _DEBUG_
+
+#ifdef _DEBUG_
+	char str_debug[40];
+	uint8_t debug_show = 3;
+#endif
+
+
+//-------------------------------------------
+// Shower configuration
+static struct ShowerConfiguration  Configuration;
+
+//-------------------------------------------
+// Tasks Handlers
+xTaskHandle xHandle_LedTask = NULL;
+xTaskHandle xHandle_DisplayTask = NULL;
+xTaskHandle xHandle_ControllerTask = NULL;
+xTaskHandle xHandle_ADTask = NULL;
+xTaskHandle xHandle_GenericTask = NULL;
+
+//-------------------------------------------
+// Tasks Code
+static void vLedTask (void *pvParameters);
+static void vDisplayTask (void *pvParameters);
+static void vControllerTask (void *pvParameters);
+static void vADTask (void *pvParameters);
+static void vGenericTask (void *pvParameters);
+
+//====================================================================================================
+//
+//====================================================================================================
+void Init_Shower_Variables()
+{
+	uint8_t i;
+
+	Configuration.CurrentUserIndex = 0; //User 6 is the initial user (Default User)
+
+	for(i=0; i<6; i++)
+	{
+		Configuration.User[i].DisplayMode 		  = DISPLAY_FLOW;
+		Configuration.User[i].ShowerMode 		  = SHOWER_MODE_POWER;
+		Configuration.User[i].LedMode 			  = LED_MODE_POWER;
+		Configuration.User[i].LedColor			  = LED_COLOR_WHITE;
+		Configuration.User[i].TemperatureSetPoint = 360;
+		Configuration.User[i].PowerSetPoint 	  = 0;
+	}
+
+	Configuration.Buzzer 			  = BUZZER_MODE_ON;
+	Configuration.MaxTemperatureLimit = TEMPERATURE_LIMIT_ON;
+
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+int main(void)
+{
+
+#if (defined VERSION_MAJOR && VERSION_MAJOR == 0) && (defined VERSION_MINOR && VERSION_MINOR == 0)
+	#warning "Verify if firmware version in Makefile is updated (VERSION_MAJOR, VERSION_MINOR, VERSION_BUILD)"
+#endif
+
+#ifdef _DEBUG_
+	sprintf_lib(str_debug, "Shower Started - version %d.%d.%d\r\n", VERSION_MAJOR, VERSION_MINOR, VERSION_BUILD); // These defines are in makefile
+	Debug_Write(str_debug, strlen(str_debug));
+#endif
+
+	SystemInit();  					// CMSIS SystemInit clocks and PLLs
+
+	Init_Shower_Variables();        // ShowerConfiguration
+
+	RTCC_Init();
+
+	Display_Init();
+
+	IrDA_Init();
+
+	LED_Init ();
+
+	Debug_Init();
+
+	Bluetooth_Init();
+
+	AD_Init();
+
+	Flowmeter_Init();
+
+	Buzzer_Init();	
+	
+	TRIAC_Init();
+
+	//-----------------------------------------------------------------------------
+	// Display Task
+	//-----------------------------------------------------------------------------
+    xTaskCreate( vDisplayTask,
+    			 "DisplayTask",
+				 configMINIMAL_STACK_SIZE,
+				 (void *) NULL,
+				 tskIDLE_PRIORITY,
+				 xHandle_DisplayTask);
+
+	//-----------------------------------------------------------------------------
+	// Controller Task
+	//-----------------------------------------------------------------------------
+	xTaskCreate( vControllerTask,
+    			 "ControllerTask",
+				 configMINIMAL_STACK_SIZE,
+				 (void *) NULL,
+				 tskIDLE_PRIORITY + 1,
+				 xHandle_ControllerTask);
+
+	//-----------------------------------------------------------------------------
+	// Led Task
+	//-----------------------------------------------------------------------------
+	xTaskCreate( vLedTask,
+    			 "LedTask",
+				 configMINIMAL_STACK_SIZE,
+				 (void *) NULL,
+				 tskIDLE_PRIORITY,
+				 xHandle_LedTask);
+
+	//-----------------------------------------------------------------------------
+	// AD Task
+	//-----------------------------------------------------------------------------
+	xTaskCreate( vADTask,
+    			 "ADTask",
+				 configMINIMAL_STACK_SIZE,
+				 (void *) NULL,
+				 tskIDLE_PRIORITY,
+				 xHandle_GenericTask);
+
+	//-----------------------------------------------------------------------------
+	// Generic Task
+	//-----------------------------------------------------------------------------
+	xTaskCreate( vGenericTask,
+    			 "GenericTask",
+				 configMINIMAL_STACK_SIZE,
+				 (void *) NULL,
+				 tskIDLE_PRIORITY,
+				 xHandle_GenericTask);
+
+    vTaskStartScheduler();
+
+    return 0;
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+void RemoteControlCommand(uint32_t Data)
+{
+	switch(Data)
+	{
+		//----------------------------------------------------------------------------------------------
+		case KEY_MENU:
+		{
+			if( Configuration.User[Configuration.CurrentUserIndex].DisplayMode == DISPLAY_OFF)
+			{
+				Configuration.User[Configuration.CurrentUserIndex].DisplayMode = DISPLAY_FLOW;
+				#ifdef _DEBUG_
+					sprintf_lib(str_debug, "DISPLAY_FLOW\r\n" );
+				#endif
+			}
+			else if( Configuration.User[Configuration.CurrentUserIndex].DisplayMode == DISPLAY_FLOW)
+			{
+				Configuration.User[Configuration.CurrentUserIndex].DisplayMode = DISPLAY_TEMPERATURE;
+				#ifdef _DEBUG_
+					sprintf_lib(str_debug, "DISPLAY_TEMPERATURE\r\n" );
+				#endif
+			}
+			else if( Configuration.User[Configuration.CurrentUserIndex].DisplayMode == DISPLAY_TEMPERATURE)
+			{
+				Configuration.User[Configuration.CurrentUserIndex].DisplayMode = DISPLAY_POWER;
+				#ifdef _DEBUG_
+					sprintf_lib(str_debug, "DISPLAY_POWER\r\n" );
+				#endif
+			}
+			else if( Configuration.User[Configuration.CurrentUserIndex].DisplayMode == DISPLAY_POWER)
+			{
+				Configuration.User[Configuration.CurrentUserIndex].DisplayMode = DISPLAY_OFF;
+				#ifdef _DEBUG_
+					sprintf_lib(str_debug, "DISPLAY_OFF\r\n" );
+				#endif
+			}
+
+			#ifdef _DEBUG_
+				Debug_Write(str_debug, strlen(str_debug));
+			#endif
+
+			break;
+		}
+		//----------------------------------------------------------------------------------------------
+		case KEY_UP:
+		{
+			uint8_t User_Shower_Mode = Configuration.User[Configuration.CurrentUserIndex].ShowerMode;
+
+			if( User_Shower_Mode == SHOWER_MODE_POWER)
+			{
+				if( Configuration.User[Configuration.CurrentUserIndex].PowerSetPoint < 100)
+				{
+					Configuration.User[Configuration.CurrentUserIndex].PowerSetPoint++;
+				}
+
+				#ifdef _DEBUG_
+					sprintf_lib(str_debug, "U%d_POWER %03d\r\n", Configuration.CurrentUserIndex, Configuration.User[Configuration.CurrentUserIndex].PowerSetPoint );
+					Debug_Write(str_debug, strlen(str_debug));
+				#endif
+			}
+			else //SHOWER_MODE_TEMPERATURE;
+			{
+				if( Configuration.User[Configuration.CurrentUserIndex].TemperatureSetPoint < MAX_SETPOINT)
+				{
+					Configuration.User[Configuration.CurrentUserIndex].TemperatureSetPoint+=10;
+				}
+
+				#ifdef _DEBUG_
+					sprintf_lib(str_debug, "U%d_TEMPERATURE %03d\r\n",  Configuration.CurrentUserIndex, Configuration.User[Configuration.CurrentUserIndex].TemperatureSetPoint );
+					Debug_Write(str_debug, strlen(str_debug));
+				#endif
+			}
+
+			break;
+		}
+		//----------------------------------------------------------------------------------------------
+		case KEY_DOWN:
+		{
+
+			uint8_t User_Shower_Mode = Configuration.User[Configuration.CurrentUserIndex].ShowerMode;
+
+			if( User_Shower_Mode == SHOWER_MODE_POWER)
+			{
+				if( Configuration.User[Configuration.CurrentUserIndex].PowerSetPoint > 0)
+				{
+					Configuration.User[Configuration.CurrentUserIndex].PowerSetPoint--;
+				}
+
+				#ifdef _DEBUG_
+					sprintf_lib(str_debug, "U%d_POWER %03d\r\n", Configuration.CurrentUserIndex, Configuration.User[Configuration.CurrentUserIndex].PowerSetPoint );
+					Debug_Write(str_debug, strlen(str_debug));
+				#endif
+			}
+			else // SHOWER_MODE_TEMPERATURE;
+			{
+				// Lower temperature must be equal to the inlet temperature
+				if( Configuration.User[Configuration.CurrentUserIndex].TemperatureSetPoint > AD_GetWaterTemperature(TEMPERATURE_INLET) )
+				{
+					Configuration.User[Configuration.CurrentUserIndex].TemperatureSetPoint-=10;
+				}
+
+				#ifdef _DEBUG_
+					sprintf_lib(str_debug, "U%d_TEMPERATURE %03d\r\n",  Configuration.CurrentUserIndex, Configuration.User[Configuration.CurrentUserIndex].TemperatureSetPoint );
+					Debug_Write(str_debug, strlen(str_debug));
+				#endif
+			}
+
+			break;
+		}
+		//----------------------------------------------------------------------------------------------
+		case KEY_USER:
+		{
+			if( Configuration.CurrentUserIndex >= 5 )
+			{
+				Configuration.CurrentUserIndex = 0;
+			}
+			else
+			{
+				Configuration.CurrentUserIndex++;
+			}
+
+			#ifdef _DEBUG_
+				sprintf_lib(str_debug, "U%d\r\n", Configuration.CurrentUserIndex );
+				Debug_Write(str_debug, strlen(str_debug));
+			#endif
+
+			break;
+		}
+		//----------------------------------------------------------------------------------------------
+		case KEY_LED_OFF:
+		{
+			static uint8_t Last_LedMode;
+
+			uint8_t User_Led_Mode = Configuration.User[Configuration.CurrentUserIndex].LedMode;
+
+			if( User_Led_Mode != LED_MODE_OFF)
+			{
+				Last_LedMode = Configuration.User[Configuration.CurrentUserIndex].LedMode;
+
+				Configuration.User[Configuration.CurrentUserIndex].LedMode = LED_MODE_OFF;
+
+				#ifdef _DEBUG_
+					sprintf_lib(str_debug, "LED_MODE_OFF\r\n" );
+				#endif
+			}
+			else
+			{
+				if( (Last_LedMode != LED_MODE_AUTO ) && (Last_LedMode != LED_MODE_FIXED) )
+				{
+					Last_LedMode = LED_MODE_AUTO;
+				}
+
+				Configuration.User[Configuration.CurrentUserIndex].LedMode = Last_LedMode;
+
+				#ifdef _DEBUG_
+					if(Configuration.User[Configuration.CurrentUserIndex].LedMode == LED_MODE_AUTO)
+					{
+						sprintf_lib(str_debug, "LED_MODE_AUTO\r\n" );
+					}
+					else
+					{
+						sprintf_lib(str_debug, "LED_MODE_FIXED\r\n" );
+					}
+				#endif
+			}
+
+			#ifdef _DEBUG_
+				Debug_Write(str_debug, strlen(str_debug));
+			#endif
+			break;
+		}
+		//----------------------------------------------------------------------------------------------
+		case KEY_LED_AUTO:
+		{
+			uint8_t User_Led_Mode = Configuration.User[Configuration.CurrentUserIndex].LedMode;
+
+			if( ( User_Led_Mode == LED_MODE_FIXED) || ( User_Led_Mode == LED_MODE_OFF) )
+			{
+				Configuration.User[Configuration.CurrentUserIndex].LedMode = LED_MODE_AUTO;
+
+				#ifdef _DEBUG_
+					sprintf_lib(str_debug, "LED_MODE_AUTO\r\n" );
+				#endif
+			}
+			else
+			{
+				Configuration.User[Configuration.CurrentUserIndex].LedMode = LED_MODE_FIXED;
+
+				if(Configuration.User[Configuration.CurrentUserIndex].ShowerMode == SHOWER_MODE_TEMPERATURE)
+				{
+					Configuration.User[Configuration.CurrentUserIndex].LedColor = LED_GetColorByTemperature(AD_GetWaterTemperature(TEMPERATURE_OUTLET));
+
+					#ifdef _DEBUG_
+						sprintf_lib(str_debug, "LED_MODE_FIXED - Sensor %d - Color %02X\r\n",AD_GetWaterTemperature(TEMPERATURE_OUTLET), LED_GetColorByTemperature(AD_GetWaterTemperature(TEMPERATURE_OUTLET)));
+					#endif
+				}
+				else
+				{
+					Configuration.User[Configuration.CurrentUserIndex].LedColor = LED_GetColorByPower(TRIAC_GetPower());
+
+					#ifdef _DEBUG_
+						sprintf_lib(str_debug, "LED_MODE_FIXED - Power %d - Color %02X\r\n", TRIAC_GetPower(), LED_GetColorByPower(TRIAC_GetPower()));
+					#endif
+				}
+			}
+			#ifdef _DEBUG_
+				Debug_Write(str_debug, strlen(str_debug));
+			#endif
+
+			break;
+		}
+		//----------------------------------------------------------------------------------------------
+		case KEY_BIP:
+		{
+			if( Configuration.Buzzer == BUZZER_MODE_OFF)
+			{
+				Configuration.Buzzer = BUZZER_MODE_ON;
+
+				#ifdef _DEBUG_
+					sprintf_lib(str_debug, "BUZZER_MODE_ON\r\n" );
+				#endif
+
+				Buzzer_On();
+			}
+			else
+			{
+				Configuration.Buzzer = BUZZER_MODE_OFF;
+
+				#ifdef _DEBUG_
+					sprintf_lib(str_debug, "BUZZER_MODE_OFF\r\n" );
+				#endif
+
+				Buzzer_Off();
+			}
+
+			#ifdef _DEBUG_
+				Debug_Write(str_debug, strlen(str_debug));
+			#endif
+
+			break;
+		}
+		//----------------------------------------------------------------------------------------------
+		case KEY_TEMPERATURE:
+		{
+			Configuration.User[Configuration.CurrentUserIndex].ShowerMode = SHOWER_MODE_TEMPERATURE;
+
+			#ifdef _DEBUG_
+				sprintf_lib(str_debug, "SHOWER_MODE_TEMPERATURE\r\n" );
+				Debug_Write(str_debug, strlen(str_debug));
+			#endif
+
+			break;
+		}
+		//----------------------------------------------------------------------------------------------
+		case KEY_POWER:
+		{
+			Configuration.User[Configuration.CurrentUserIndex].ShowerMode = SHOWER_MODE_POWER;
+
+			#ifdef _DEBUG_
+				sprintf_lib(str_debug, "SHOWER_MODE_POWER\r\n" );
+				Debug_Write(str_debug, strlen(str_debug));
+			#endif
+
+			break;
+		}
+		//----------------------------------------------------------------------------------------------
+		case E1:
+		{
+			#ifdef _DEBUG_
+				debug_show++;
+				if( debug_show>3 ) debug_show = 0;
+			#endif
+			break;
+		}
+		//----------------------------------------------------------------------------------------------
+		default:
+		{
+			break;
+		}
+
+	}
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void EXTI2_3_IRQHandler (void)
+{
+	uint32_t Data;
+
+	IrDA_DisableIRQ();		// Disable the IRQ
+	Data = IrDA_IRQHandler();
+	IrDA_EnableIRQ();
+
+	if( Data > 0)
+	{
+		RemoteControlCommand(Data);
+	}
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+static void vLedTask (void *pvParameters)
+{
+	for (;;)
+	{
+		uint8_t User_Led_Mode    = Configuration.User[Configuration.CurrentUserIndex].LedMode;
+
+		switch(User_Led_Mode)
+		{
+			//--------------------------------------------
+			case LED_MODE_OFF:
+			{
+				LED_SetColor(LED_COLOR_OFF);
+				break;
+			}
+			//--------------------------------------------
+			case LED_MODE_TEMPERATURE:
+			{
+				LED_SetColorByTemperature(AD_GetWaterTemperature(TEMPERATURE_OUTLET));
+				break;
+			}
+			//--------------------------------------------
+			case LED_MODE_POWER:
+			{
+				LED_SetColorByPower(TRIAC_GetPower());
+				break;
+			}
+			//--------------------------------------------
+			case LED_MODE_AUTO:
+			{
+				uint8_t User_Shower_Mode = Configuration.User[Configuration.CurrentUserIndex].ShowerMode;
+
+				if( User_Shower_Mode == SHOWER_MODE_TEMPERATURE )
+				{
+					LED_SetColorByTemperature(AD_GetWaterTemperature(TEMPERATURE_OUTLET));
+				}
+				else //SHOWER_MODE_POWER
+				{
+					LED_SetColorByPower(TRIAC_GetPower());
+				}
+				break;
+			}
+			//--------------------------------------------
+			case LED_MODE_FIXED:
+			{
+				uint8_t User_Led_Color   = Configuration.User[Configuration.CurrentUserIndex].LedColor;
+				LED_SetColor(User_Led_Color);
+				break;
+			}
+			//--------------------------------------------
+			default:
+			{
+				break;
+			}
+
+		}
+
+		vTaskDelay(100);
+	}
+	  
+	vTaskDelete(NULL);
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+static void vControllerTask (void *pvParameters)
+{
+	uint8_t Power;
+
+	for (;;)
+	{
+		//---------------------------------------------
+		// Control On
+		//if( Flowmeter_GetFlow() < FLOW_ON )
+		if( 1 )
+		{
+			if( Configuration.User[Configuration.CurrentUserIndex].ShowerMode == SHOWER_MODE_TEMPERATURE )
+			{
+				Power = Controller_Task(Configuration.User[Configuration.CurrentUserIndex].TemperatureSetPoint);
+			    Power = 0;
+			}
+			else // SHOWER_MODE_POWER
+			{
+				Power = Configuration.User[Configuration.CurrentUserIndex].PowerSetPoint;
+			}
+		}
+
+		//---------------------------------------------
+		// Minimum Flow Protection
+		if( Flowmeter_GetFlow() < FLOW_OFF )
+		{
+			Power = 0;
+		}
+
+		//---------------------------------------------
+		// Max Temperature Protection
+		if( (AD_GetWaterTemperature(TEMPERATURE_OUTLET) > MAX_TEMPERATURE) || (AD_GetWaterTemperature(TEMPERATURE_RESISTANCE) > MAX_TEMPERATURE) )
+		{
+			Power = 0;
+		}
+
+		// Set Triac power
+		//TRIAC_SetPower(Power);
+
+		vTaskDelay(1);
+	}
+
+	vTaskDelete(NULL);
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+static void vDisplayTask (void *pvParameters)
+{
+
+	uint8_t Dg1 = 0;
+	uint8_t Dg2 = 0;
+
+	for (;;)
+	{
+
+		uint8_t User_Display_Mode = Configuration.User[Configuration.CurrentUserIndex].DisplayMode;
+
+		switch(User_Display_Mode)
+		{
+			//--------------------------------------------
+			case DISPLAY_OFF:
+			{
+				//Dg1 = ;
+				//Dg2 = ;
+				Display.blPonto1 = 0;
+				Display.blPonto2 = 0;
+				break;
+			}
+			//--------------------------------------------
+			case DISPLAY_FLOW:
+			{
+				uint8_t Flow = Flowmeter_GetFlow();
+				Flow = Flow/10;
+				if( Flow < 10 )
+				{
+					Dg1 = Flow/10;
+					Dg2 = 0;
+
+					Display.blPonto1 = 1;
+					Display.blPonto2 = 0;
+				}
+				else if (Flow > 99  )
+				{
+					uint32_t val = Flow/10;
+					Dg1 = val%10;
+					Dg2 = val/10;
+
+					Display.blPonto1 = 0;
+					Display.blPonto2 = 0;
+				}
+				else
+				{
+					Dg1 = Flow%10;
+					Dg2 = Flow/10;
+
+					Display.blPonto1 = 1;
+					Display.blPonto2 = 0;
+				}
+
+				break;
+			}
+			//--------------------------------------------
+			case DISPLAY_TEMPERATURE:
+			{
+				uint8_t Temp = (uint8_t)( AD_GetWaterTemperature(TEMPERATURE_OUTLET)/10);
+
+				Dg1 = Temp%10;
+				Dg2 = Temp/10;
+
+				Display.blPonto1 = 0;
+				Display.blPonto2 = 0;
+
+				break;
+			}
+			//--------------------------------------------
+			case DISPLAY_POWER:
+			{
+				if(TRIAC_GetPower() == 100)
+				{
+					Display.Digi1 = _SEG_G_;
+					Display.Digi2 = _SEG_G_;
+				}
+				else
+				{
+					Dg1 = TRIAC_GetPower()%10;
+					Dg2 = TRIAC_GetPower()/10;
+				}
+
+				Display.blPonto1 = 0;
+				Display.blPonto2 = 0;
+
+				break;
+			}
+			//--------------------------------------------
+			default:
+			{
+				break;
+			}
+
+		}
+
+		if(Dg1 == 0) Display.Digi1 = _0_;
+		if(Dg2 == 0) Display.Digi2 = _0_;
+		if(Dg1 == 1) Display.Digi1 = _1_;
+		if(Dg2 == 1) Display.Digi2 = _1_;
+		if(Dg1 == 2) Display.Digi1 = _2_;
+		if(Dg2 == 2) Display.Digi2 = _2_;
+		if(Dg1 == 3) Display.Digi1 = _3_;
+		if(Dg2 == 3) Display.Digi2 = _3_;
+		if(Dg1 == 4) Display.Digi1 = _4_;
+		if(Dg2 == 4) Display.Digi2 = _4_;
+		if(Dg1 == 5) Display.Digi1 = _5_;
+		if(Dg2 == 5) Display.Digi2 = _5_;
+		if(Dg1 == 6) Display.Digi1 = _6_;
+		if(Dg2 == 6) Display.Digi2 = _6_;
+		if(Dg1 == 7) Display.Digi1 = _7_;
+		if(Dg2 == 7) Display.Digi2 = _7_;
+		if(Dg1 == 8) Display.Digi1 = _8_;
+		if(Dg2 == 8) Display.Digi2 = _8_;
+		if(Dg1 == 9) Display.Digi1 = _9_;
+		if(Dg2 == 9) Display.Digi2 = _9_;
+
+		if(User_Display_Mode == DISPLAY_OFF)
+		{
+			Display.Digi1 = 0x00;
+			Display.Digi2 = 0x00;
+		}
+
+		Display_task();
+		
+		vTaskDelay(10);
+	}
+
+	vTaskDelete(NULL);
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+static void vADTask (void *pvParameters)
+{
+	for (;;)
+	{
+		AD_Task();
+		vTaskDelay(100);
+	}
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+static void vGenericTask (void *pvParameters)
+{
+
+	for (;;)
+	{
+		#ifdef _DEBUG_
+			if(debug_show == 0 )
+			{
+				sprintf_lib(str_debug, "%d ", AD_GetWaterTemperature(TEMPERATURE_INLET) );
+				Debug_Write(str_debug, strlen(str_debug));
+
+				sprintf_lib(str_debug, "%d ", AD_GetWaterTemperature(TEMPERATURE_RESISTANCE) );
+				Debug_Write(str_debug, strlen(str_debug));
+
+				sprintf_lib(str_debug, "%d ", AD_GetWaterTemperature(TEMPERATURE_OUTLET) );
+				Debug_Write(str_debug, strlen(str_debug));
+
+				sprintf_lib(str_debug, "%d ", Flowmeter_GetFlow() );
+				Debug_Write(str_debug, strlen(str_debug));
+
+				sprintf_lib(str_debug, "%d ", TRIAC_GetPower() );
+				Debug_Write(str_debug, strlen(str_debug));
+
+				sprintf_lib(str_debug, "%d\r\n", Configuration.User[Configuration.CurrentUserIndex].TemperatureSetPoint );
+				Debug_Write(str_debug, strlen(str_debug));
+			}
+			else if(debug_show == 1)
+			{
+				sprintf_lib(str_debug, "%d ", AD_GetVoltage(VOLTAGE_PROTECTION) );
+				Debug_Write(str_debug, strlen(str_debug));
+
+				sprintf_lib(str_debug, "%d 0 0 0\r\n", AD_GetVoltage(VOLTAGE_VOLTMETER) );
+				Debug_Write(str_debug, strlen(str_debug));
+			}
+			else if(debug_show == 2)
+			{
+				sprintf_lib(str_debug, "%d ", AD_GetVoltage(VOLTAGE_TOUCH_UP) );
+				Debug_Write(str_debug, strlen(str_debug));
+
+				sprintf_lib(str_debug, "%d 0 0 0\r\n", AD_GetVoltage(VOLTAGE_TOUCH_DOWN) );
+				Debug_Write(str_debug, strlen(str_debug));
+			}
+		#endif
+
+		vTaskDelay(100);
+	}
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+void vApplicationIdleHook( void )
+{
+	/* vApplicationIdleHook() will only be called if configUSE_IDLE_HOOK is set
+	to 1 in FreeRTOSConfig.h.  It will be called on each iteration of the idle
+	task.  It is essential that code added to this hook function never attempts
+	to block in any way (for example, call xQueueReceive() with a block time
+	specified, or call vTaskDelay()).  If the application makes use of the
+	vTaskDelete() API function (as this demo application does) then it is also
+	important that vApplicationIdleHook() is permitted to return to its calling
+	function, because it is the responsibility of the idle task to clean up
+	memory allocated by the kernel to any task that has since been deleted. */
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+void vApplicationStackOverflowHook( xTaskHandle pxTask, signed char *pcTaskName )
+{
+	( void ) pcTaskName;
+	( void ) pxTask;
+
+	/* Run time stack overflow checking is performed if
+	configCHECK_FOR_STACK_OVERFLOW is defined to 1 or 2.  This hook
+	function is called if a stack overflow is detected. */
+	taskDISABLE_INTERRUPTS();
+
+	// TODO - Desabilitar as interrupccoes de hardware ou pelo menos a do triac
+
+	for( ;; );
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+void vApplicationTickHook( void )
+{
+	/* This function will be called by each tick interrupt if
+	configUSE_TICK_HOOK is set to 1 in FreeRTOSConfig.h.  User code can be
+	added here, but the tick hook is called from an interrupt context, so
+	code must not attempt to block, and only the interrupt safe FreeRTOS API
+	functions can be used (those that end in FromISR()). */
+}
+
+
+
+
+

@@ -1,0 +1,20 @@
+#ifndef __BUZZER_H
+#define __BUZZER_H
+
+#include "stm32f0xx.h"
+
+//-------------------------------
+// Buzzer_Control Function Definitions
+#define BUZZER_ON  1
+#define BUZZER_OFF 0
+
+//-------------------------------
+// Functions Definitions
+void Buzzer_Init(void);
+void Buzzer_Task(void);
+void Buzzer_Beep(uint16_t Time, uint8_t Repeat);
+void Buzzer_Control(uint8_t On_Off);
+
+
+
+#endif

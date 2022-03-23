@@ -1,0 +1,67 @@
+#include "User.h"
+/*
+
+//-------------------------------------------
+// Users shower configuration
+uint8_t UserIndex; 		// Index of the current user
+USER 	User[6]; 		// User settings. User[0] is U6, User[1] is U1, ... , User[5] is U5
+
+//====================================================================================================
+//
+//====================================================================================================
+void User_Init()
+{
+	uint8_t i;
+
+	UserIndex = 0; //User 6 is the initial user (Default User)
+
+	for(i=0; i<6; i++)
+	{
+		User[i].ShowerMode 		    = SHOWER_MODE_TEMPERATURE;
+		User[i].LedMode 			= LED_MODE_AUTO;
+		User[i].LedColor			= LED_COLOR_WHITE;
+		User[i].TemperatureSetPoint = DEFAULT_SETPOINT;
+		User[i].PowerSetPoint 	    = 0;
+		User[i].Buzzer				= BUZZER_MODE_ON;
+		User[i].MaxTemperatureLimit = TEMPERATURE_LIMIT_ON;
+	}
+}
+
+//====================================================================================================
+//
+//====================================================================================================
+void User_Buzzer()
+{
+
+
+
+
+}
+*/
+/*
+void User_Init_Shower_Variables(uint8_t  UserShowerMode,
+								uint8_t  UserLedMode,
+								uint8_t  UserLedColor,
+								uint16_t UserTemperatureSetPoint,
+								uint8_t  UserPowerSetPoint,
+								uint8_t  UserBuzzer,
+								uint8_t  UserMaxTemperatureLimit)
+{
+	uint8_t i;
+	USER1 User[6];
+
+	//UserIndex = 1; //User 1 is the initial user (Default User)
+
+	for(i=0; i<6; i++)
+	{
+		User[i].ShowerMode 		    = UserShowerMode;
+		User[i].LedMode 			= UserLedMode;
+		User[i].LedColor			= UserLedColor;
+		User[i].TemperatureSetPoint = UserTemperatureSetPoint;
+		User[i].PowerSetPoint 	    = UserPowerSetPoint;
+		User[i].Buzzer 			    = UserBuzzer;
+		User[i].MaxTemperatureLimit = UserMaxTemperatureLimit;
+	}
+
+	//CommandsQueueHandler = xQueueCreate(COMMANDS_QUEUE_SIZE, sizeof(uint32_t));
+}*/

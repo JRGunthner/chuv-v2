@@ -1,0 +1,494 @@
+#include "Screen.h"
+#include "NTC.h"
+#include "string.h"
+#include "TRIAC.h"
+
+//-------------------------------
+// Screens that are not visible outside screen.c
+#define SCREEN_MSG            0xB0
+#define SCREEN_MAIN           0xB1
+
+//-------------------------------
+// Menu sub screen
+#define SCREEN_MENU_RESET     0xA0
+#define SCREEN_MENU_TE        0xA1
+#define SCREEN_MENU_TS        0xA2
+#define SCREEN_MENU_LT	      0xA3
+#define SCREEN_MENU_VZ	      0xA4
+#define SCREEN_MENU_TB	      0xA5
+#define SCREEN_MENU_LG	      0xA6
+#define SCREEN_MENU_CB	      0xA7
+
+//-------------------------------
+// variables for SCREEN_MSG
+#define SCREEN_BUFFER_LEN 20
+uint8_t DisplayBuffer[SCREEN_BUFFER_LEN];
+uint8_t iSize = 0;
+uint8_t iSizeAux = 0;
+
+static uint8_t TimeoutScreen = 0;
+
+static uint16_t TimeoutWellcomeMsg = 0;
+#define TIMEOUT_WELLCOME_MSG     1200    // 120s - 2min
+
+uint8_t Screen = SCREEN_MAIN;
+
+uint8_t MainSubScreen = SCREEN_MAIN_IDLE;
+uint8_t MenuSubScreen = SCREEN_MENU_RESET;
+uint8_t NextScreen    = SCREEN_MAIN;
+
+uint8_t blink = 0;
+
+//-------------------------------
+// Screens Timeouts
+#define TIMEOUT_SCREEN_VERSION     40    // 4s
+#define TIMEOUT_SCREEN_FLOW        80    // 4s
+#define TIMEOUT_SCREEN_SETPOINT    40    // 4s
+#define TIMEOUT_SCREEN_USER        40    // 4s
+#define TIMEOUT_SCREEN_POWER       40    // 4s
+#define TIMEOUT_SCREEN_MENU_MSG    40    // 4s
+#define TIMEOUT_SCREEN_MENU_DATA   100   // 10s
+#define TIMEOUT_SCREEN_LITERS      40    // 4s
+#define TIMEOUT_SCREEN_TEMPERATURE 40    // 4s
+
+//==================================================================================================
+//
+//==================================================================================================
+void Screen_Init()
+{
+	Display_Version( VERSION_MAJOR, VERSION_MINOR );
+
+	vTaskDelay(2000);
+
+	Screen_Show(SCREEN_MESSAGE_WELLCOME);
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Screen_ShowMessage( char *Buff, uint8_t SizeBuff)
+{
+	memset( DisplayBuffer, 0x00, sizeof(DisplayBuffer) );
+	sprintf( (char*)DisplayBuffer, "%s", Buff);
+	iSize = SizeBuff;
+	iSizeAux = 0;
+	Screen = SCREEN_MSG;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Screen_ShowError()
+{
+	if ( TRIAC_GetError() == TRIAC_ERROR_T1)
+	{
+		Display_UpdateChar( 'T', '1');
+	}
+	if ( TRIAC_GetError() == TRIAC_ERROR_T2)
+	{
+		Display_UpdateChar( 'T', '2');
+	}
+	if ( TRIAC_GetError() == TRIAC_ERROR_T3)
+	{
+		Display_UpdateChar( 'T', '3');
+	}
+	//if ( TRIAC_GetError() == TRIAC_LOST_EDGES_ERROR)
+	//{
+	//	Display_UpdateChar( 'E', '8');
+	//}
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Screen_Task(uint16_t TSP, uint8_t  PSP, uint8_t UI)
+{
+	if( ( TRIAC_GetError() != TRIAC_OK) && (TRIAC_GetError() != TRIAC_ERROR_LOST_EDGES) )
+	{
+		Screen_ShowError();
+	}
+	else
+	{
+		switch( Screen )
+		{
+			//--------------------------------------------
+			case SCREEN_MSG:
+			{
+				Display_UpdateChar(DisplayBuffer[iSizeAux] , DisplayBuffer[iSizeAux+1] );
+				iSizeAux = iSizeAux+1;
+				if(iSizeAux >  iSize)
+				{
+					iSize = 0;
+					iSizeAux = 0;
+					TimeoutScreen = 0;
+					Screen = NextScreen;
+				}
+				break;
+			}
+			//--------------------------------------------
+			case SCREEN_MAIN:
+			{
+				if( MainSubScreen == SCREEN_MAIN_POWER ) //POWER
+				{
+					Display_UpdateChar('P', PSP+0x30);
+				}
+				else if( MainSubScreen == SCREEN_MAIN_TEMPERATURE ) //TEMPERATURE
+				{
+					Display_UpdateValue(NTC_GetWaterTemperature(TEMPERATURE_OUTLET));
+				}
+				else //IDLE
+				{
+					Display_UpdateChar('-','-');
+
+					TimeoutWellcomeMsg++;
+
+					if( TimeoutWellcomeMsg > TIMEOUT_WELLCOME_MSG)
+					{
+						TimeoutWellcomeMsg = 0;
+						Screen_ShowMessage( MSG_WELLCOME , MSG_WELLCOME_SIZE);
+						NextScreen = SCREEN_MAIN;
+					}
+				}
+
+				break;
+			}
+			//--------------------------------------------
+			case SCREEN_FLOW:
+			{
+				Display_UpdateValue(Flowmeter_GetFlow()/10);
+				if( TimeoutScreen++> TIMEOUT_SCREEN_FLOW)
+				{
+					TimeoutScreen = 0;
+					Screen = SCREEN_MAIN;
+				}
+				break;
+			}
+			//--------------------------------------------
+			case SCREEN_TEMPERATURE:
+			{
+				Display_UpdateValue(NTC_GetWaterTemperature(TEMPERATURE_OUTLET));
+				if( TimeoutScreen++> TIMEOUT_SCREEN_TEMPERATURE)
+				{
+					TimeoutScreen = 0;
+					Screen = SCREEN_MAIN;
+				}
+				break;
+			}
+			//--------------------------------------------
+			case SCREEN_POWER_SETPOINT:
+			{
+				Display_UpdateChar('P', PSP+0x30 );
+				if( TimeoutScreen++> TIMEOUT_SCREEN_POWER)
+				{
+					TimeoutScreen = 0;
+					Screen = SCREEN_MAIN;
+				}
+				break;
+			}
+			//--------------------------------------------
+			case SCREEN_TEMPERATURE_SETPOINT:
+			{
+				Display_UpdateValue(TSP);
+
+				blink = ~blink;
+				Display_UpdatePoints(blink, DISPLAY_POINT_MIDDLE | DISPLAY_POINT_RIGHT);
+
+				if( TimeoutScreen++> TIMEOUT_SCREEN_SETPOINT)
+				{
+					blink = 0;
+					Display_UpdatePoints(0, DISPLAY_POINT_MIDDLE | DISPLAY_POINT_RIGHT);
+					TimeoutScreen = 0;
+					Screen = SCREEN_MAIN;
+				}
+				break;
+			}
+			//--------------------------------------------
+			case SCREEN_USER:
+			{
+				uint8_t aux;
+				aux = UI+0x30;
+				if(aux == 0x30) aux = aux+6;
+
+				Display_UpdateChar('u',aux);
+				if( TimeoutScreen++> TIMEOUT_SCREEN_USER)
+				{
+					TimeoutScreen = 0;
+					Screen = SCREEN_MAIN;
+				}
+				break;
+			}
+			//--------------------------------------------
+			case SCREEN_LITERS:
+			{
+				Display_UpdateChar2(SHORTMSG_NOT_APPLIED);
+				if( TimeoutScreen++> TIMEOUT_SCREEN_LITERS)
+				{
+					TimeoutScreen = 0;
+					Screen = SCREEN_MAIN;
+				}
+				break;
+			}
+			//--------------------------------------------
+			case SCREEN_MENU:
+			{
+				TimeoutScreen++;
+
+				if( MenuSubScreen == SCREEN_MENU_TE )
+				{
+					if( TimeoutScreen < TIMEOUT_SCREEN_MENU_MSG)
+					{
+						Display_UpdateChar2(SHORTMSG_INLET_TEMPERATURE);
+					}
+					else
+					{
+						Display_UpdateValue(NTC_GetWaterTemperature(TEMPERATURE_INLET));
+					}
+				}
+				else if( MenuSubScreen == SCREEN_MENU_TS )
+				{
+					if( TimeoutScreen < TIMEOUT_SCREEN_MENU_MSG)
+					{
+						Display_UpdateChar2(SHORTMSG_OUTLET_TEMPERATURE);
+					}
+					else
+					{
+						Display_UpdateValue(NTC_GetWaterTemperature(TEMPERATURE_OUTLET));
+					}
+				}
+				else if( MenuSubScreen == SCREEN_MENU_LT	)
+				{
+					if( TimeoutScreen < TIMEOUT_SCREEN_MENU_MSG)
+					{
+						Display_UpdateChar2(SHORTMSG_LITERS);
+					}
+					else
+					{
+						Display_UpdateChar2(SHORTMSG_NOT_APPLIED);
+					}
+				}
+				else if( MenuSubScreen == SCREEN_MENU_VZ	)
+				{
+					if( TimeoutScreen < TIMEOUT_SCREEN_MENU_MSG)
+					{
+						Display_UpdateChar2(SHORTMSG_FLOW);
+					}
+					else
+					{
+						Display_UpdateValue(Flowmeter_GetFlow()/10);
+					}
+				}
+				else if( MenuSubScreen == SCREEN_MENU_TB	)
+				{
+					if( TimeoutScreen < TIMEOUT_SCREEN_MENU_MSG)
+					{
+						Display_UpdateChar2(SHORTMSG_BATH_TIME);
+					}
+					else
+					{
+						Display_UpdateChar2(SHORTMSG_NOT_APPLIED);
+					}
+				}
+				else if( MenuSubScreen == SCREEN_MENU_LG	)
+				{
+					if( TimeoutScreen < TIMEOUT_SCREEN_MENU_MSG)
+					{
+						Display_UpdateChar2(SHORTMSG_LOG);
+					}
+					else
+					{
+						Display_UpdateChar2(SHORTMSG_NOT_APPLIED);
+					}
+				}
+				else if( MenuSubScreen == SCREEN_MENU_CB	)
+				{
+					if( TimeoutScreen < TIMEOUT_SCREEN_MENU_MSG)
+					{
+						Display_UpdateChar2(SHORTMSG_MONTH_COMSUMPTION);
+					}
+					else
+					{
+						Display_UpdateChar2(SHORTMSG_NOT_APPLIED);
+					}
+				}
+
+				if( TimeoutScreen > (TIMEOUT_SCREEN_MENU_MSG + TIMEOUT_SCREEN_MENU_DATA) )
+				{
+					MenuSubScreen = SCREEN_MENU_RESET;
+					TimeoutScreen = 0;
+					Screen = SCREEN_MAIN;
+				}
+				break;
+			}
+		}
+	}
+
+    if( Screen == SCREEN_MSG)
+    {
+    	vTaskDelay(600);
+    }
+    else
+    {
+    	vTaskDelay(100);
+    }
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Screen_SetMainSubScreen(uint8_t Scr)
+{
+	MainSubScreen = Scr;
+}
+
+//==================================================================================================
+//
+//==================================================================================================
+void Screen_Show(uint8_t Scr)
+{
+    switch( Scr )
+	{
+		//--------------------------------------------
+		case SCREEN_VERSION:
+		{
+			Display_Version( VERSION_MAJOR, VERSION_MINOR );
+			break;
+		}
+    	//--------------------------------------------
+    	case SCREEN_MENU:
+    	{
+    		if( MenuSubScreen < SCREEN_MENU_CB)
+    		{
+    			MenuSubScreen++;
+    		}
+    		else
+    		{
+    			MenuSubScreen = 0xA1;
+    		}
+
+    		TimeoutScreen = 0;
+    		Screen = SCREEN_MENU;
+
+    		break;
+    	}
+		//--------------------------------------------
+		case SCREEN_FLOW:
+		{
+			TimeoutScreen = 0;
+			Screen = SCREEN_FLOW;
+			break;
+		}
+		//--------------------------------------------
+		case SCREEN_TEMPERATURE:
+		{
+			TimeoutScreen = 0;
+			Screen = SCREEN_TEMPERATURE;
+			break;
+		}
+    	//--------------------------------------------
+    	case SCREEN_TEMPERATURE_SETPOINT:
+    	{
+    		TimeoutScreen = 0;
+    		Screen = SCREEN_TEMPERATURE_SETPOINT;
+    		break;
+    	}
+		//--------------------------------------------
+		case SCREEN_POWER_SETPOINT:
+		{
+			TimeoutScreen = 0;
+			Screen = SCREEN_POWER_SETPOINT;
+			break;
+		}
+		//--------------------------------------------
+		case SCREEN_USER:
+		{
+			TimeoutScreen = 0;
+			Screen = SCREEN_USER;
+			break;
+		}
+		//--------------------------------------------
+		case SCREEN_MESSAGE_LED_OFF:
+		{
+			Screen_ShowMessage( MSG_LED_OFF, MSG_LED_OFF_SIZE);
+			NextScreen = SCREEN_MAIN;
+			break;
+		}
+		//--------------------------------------------
+		case SCREEN_MESSAGE_LED_ON:
+		{
+			Screen_ShowMessage( MSG_LED_ON, MSG_LED_ON_SIZE);
+			NextScreen = SCREEN_MAIN;
+			break;
+		}
+		//--------------------------------------------
+		case SCREEN_MESSAGE_LED_TEMPERATURE:
+		{
+			Screen_ShowMessage( MSG_LED_TEMPERATURE, MSG_LED_TEMPERATURE_SIZE);
+			NextScreen = SCREEN_MAIN;
+			break;
+		}
+		//--------------------------------------------
+		case SCREEN_MESSAGE_LED_AUTO:
+		{
+			Screen_ShowMessage( MSG_LED_AUTO, MSG_LED_AUTO_SIZE);
+			NextScreen = SCREEN_MAIN;
+			break;
+		}
+		//--------------------------------------------
+		case SCREEN_MESSAGE_LED_FIXED:
+		{
+			Screen_ShowMessage( MSG_LED_FIXED, MSG_LED_FIXED_SIZE);
+			NextScreen = SCREEN_MAIN;
+			break;
+		}
+		//--------------------------------------------
+		case SCREEN_MESSAGE_LED_POWER:
+		{
+			Screen_ShowMessage( MSG_LED_POWER, MSG_LED_POWER_SIZE);
+			NextScreen = SCREEN_MAIN;
+			break;
+		}
+		//--------------------------------------------
+		case SCREEN_MESSAGE_BIP_ON:
+		{
+			Screen_ShowMessage( MSG_BIP_ON, MSG_BIP_ON_SIZE);
+			NextScreen = SCREEN_MAIN;
+			break;
+		}
+		//--------------------------------------------
+		case SCREEN_MESSAGE_BIP_OFF:
+		{
+			Screen_ShowMessage( MSG_BIP_OFF, MSG_BIP_OFF_SIZE);
+			NextScreen = SCREEN_MAIN;
+			break;
+		}
+		//--------------------------------------------
+		case SCREEN_MESSAGE_WELLCOME:
+		{
+			Screen_ShowMessage( MSG_WELLCOME , MSG_WELLCOME_SIZE);
+			NextScreen = SCREEN_MAIN;
+			break;
+		}
+		//--------------------------------------------
+		case SCREEN_LITERS:
+		{
+			Screen_ShowMessage( MSG_LITERS, MSG_LITERS_SIZE);
+			NextScreen = SCREEN_LITERS;
+			break;
+		}
+		//--------------------------------------------
+		case SCREEN_TIMER:
+		{
+			Screen_ShowMessage( MSG_PASSWORD, MSG_PASSWORD_SIZE);
+			NextScreen = SCREEN_LITERS;
+			break;
+		}
+		//--------------------------------------------
+		default:
+		{
+			Screen_ShowMessage( MSG_ERROR, MSG_ERROR_SIZE);
+			NextScreen = SCREEN_MAIN;
+			break;
+		}
+	}
+}
+

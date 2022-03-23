@@ -1,0 +1,151 @@
+/**
+******************************************************************************
+* @file    STM32F0xx_EEPROM_Emulation/inc/eeprom.h 
+* @author  MCD Application Team
+* @version V1.0.0
+* @date    29-May-2012
+* @brief   This file contains all the functions prototypes for the EEPROM 
+*          emulation firmware library.
+******************************************************************************
+* @attention
+*
+* <h2><center>&copy; COPYRIGHT 2012 STMicroelectronics</center></h2>
+*
+* Licensed under MCD-ST Liberty SW License Agreement V2, (the "License");
+* You may not use this file except in compliance with the License.
+* You may obtain a copy of the License at:
+*
+*        http://www.st.com/software_license_agreement_liberty_v2
+*
+* Unless required by applicable law or agreed to in writing, software 
+* distributed under the License is distributed on an "AS IS" BASIS, 
+* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+* See the License for the specific language governing permissions and
+* limitations under the License.
+*
+******************************************************************************
+*/ 
+
+/* Define to prevent recursive inclusion -------------------------------------*/
+#ifndef __EEPROM_H
+#define __EEPROM_H
+
+/* Includes ------------------------------------------------------------------*/
+#include "stm32f0xx.h"
+
+/* Exported constants --------------------------------------------------------*/
+/* Define the size of the sectors to be used */
+#define PAGE_SIZE             ((uint32_t)0x0400)  /* Page size = 1KByte */
+
+/* EEPROM start address in Flash */
+#define EEPROM_START_ADDRESS  ((uint32_t)0x0800F800) /* EEPROM emulation start address:
+														from sector2, after 62KByte of used
+														Flash memory */
+
+/* Pages 0 and 1 base and end addresses */
+#define PAGE0_BASE_ADDRESS    ((uint32_t)(EEPROM_START_ADDRESS + 0x0000))
+#define PAGE0_END_ADDRESS     ((uint32_t)(EEPROM_START_ADDRESS + (PAGE_SIZE - 1)))
+
+#define PAGE1_BASE_ADDRESS    ((uint32_t)(EEPROM_START_ADDRESS + 0x0400))
+#define PAGE1_END_ADDRESS     ((uint32_t)(EEPROM_START_ADDRESS + (2 * PAGE_SIZE - 1)))
+
+/* Used Flash pages for EEPROM emulation */
+#define PAGE0                 ((uint16_t)0x0000)
+#define PAGE1                 ((uint16_t)0x0001)
+
+/* No valid page define */
+#define NO_VALID_PAGE         ((uint16_t)0x00AB)
+
+/* Page status definitions */
+#define ERASED                ((uint16_t)0xFFFF)     /* Page is empty */
+#define RECEIVE_DATA          ((uint16_t)0xEEEE)     /* Page is marked to receive data */
+#define VALID_PAGE            ((uint16_t)0x0000)     /* Page containing valid data */
+
+/* Valid pages in read and write defines */
+#define READ_FROM_VALID_PAGE  ((uint8_t)0x00)
+#define WRITE_IN_VALID_PAGE   ((uint8_t)0x01)
+
+/* Page full define */
+#define PAGE_FULL             ((uint8_t)0x80)
+
+/* Variables' number */
+#define NB_OF_VAR ((uint8_t)0x03)
+
+/* Virtual address defined by the user: 0xFFFF value is prohibited */
+#define EEPROM_ADDRESS_LITERS		((uint16_t)0x1111) // Litros consumidos
+#define EEPROM_ADDRESS_HOUERS		((uint16_t)0x2222) // Somatório de horas em funcionamento
+#define EEPROM_ADDRESS_NUMBER		((uint16_t)0x3333) // Número de banhos
+
+#define EEPROM_ADDRESS_MAX_POT		((uint16_t)0x4444) // Potência máxima registrada
+#define EEPROM_ADDRESS_MIN_POT		((uint16_t)0x5555) // Potência mínima registrada
+#define EEPROM_ADDRESS_MID_POT		((uint16_t)0x6666) // Potência média registrada
+
+#define EEPROM_ADDRESS_MAX_IN_TEMP	((uint16_t)0x7777) // Temperatura máxima de entrada
+#define EEPROM_ADDRESS_MIN_IN_TEMP	((uint16_t)0x8888) // Temperatura mínima de entrada
+#define EEPROM_ADDRESS_MID_IN_TEMP	((uint16_t)0x9999) // Temperatura média de entrada
+
+#define EEPROM_ADDRESS_MAX_OUT_TEMP	((uint16_t)0xAAAA) // Temperatura máxima de saída
+#define EEPROM_ADDRESS_MIN_OUT_TEMP	((uint16_t)0xBBBB) // Temperatura mínima de saída
+#define EEPROM_ADDRESS_MID_OUT_TEMP	((uint16_t)0xCCCC) // Temperatura média de saída
+
+#define EEPROM_ADDRESS_TEST			((uint16_t)0xDDDD) // Endereço para teste
+
+
+/* Exported types ------------------------------------------------------------*/
+/* Exported macro ------------------------------------------------------------*/
+/* Exported functions ------------------------------------------------------- */
+uint16_t EE_Init(void);
+uint16_t EE_ReadVariable (uint16_t VirtAddress, uint16_t* Data);
+uint16_t EE_WriteVariable(uint16_t VirtAddress, uint16_t  Data);
+void EE_FlashErase(void);
+
+#endif /* __EEPROM_H */
+
+/*
+ * (x) Dados a serem armazenados
+ *
+ *	01 - Litros consumidos:
+ *			Somatório do consumo de água de todos os banhos, em l [litros]
+ *
+ *	02 - Somatório de horas em funcionamento:
+ *			Somatório de tempo de todos os banhos, em h [horas]
+ *
+ *	03 - Número de banhos:
+ *			Cumulativo de todos os banhos realizados
+ *
+ *	04 - Potência máxima registrada:
+ *			Maior potência de banho registrada, em kW [quiloWats]
+ *
+ *	05 - Potência mínima registrada:
+ *			Valor medio de todas potências de banho registradas, em kW [quiloWats]
+ *
+ *	06 - Potência média registrada:
+ *			Menor potência de banho registrada, em kW [quiloWats]
+ *
+ *	07 - Temperatura máxima de entrada:
+ *			Temperatura máxima de entrada registrada, em °C [graus Celcius]
+ *
+ *	08 - Temperatura mínima de entrada:
+ *			Temperatura mínima de entrada registrada, em °C [graus Celcius]
+ *
+ *	09 - Temperatura média de entrada:
+ *			Temperatura média de entrada registrada, em °C [graus Celcius]
+ *
+ *	10 - Temperatura máxima de saída:
+ *			Temperatura máxima de saída registrada, em °C [graus Celcius]
+ *
+ *	11 - Temperatura mínima de saída:
+ *			Temperatura mínima de saída registrada, em °C [graus Celcius]
+ *
+ *	12 - Temperatura média de saída:
+ *			Temperatura média de saída registrada, em °C [graus Celcius]
+ *
+ *
+ *	Grava os 12 valores na flash a cada intervalo de 24h entre banhos OU após três
+ *	banhos com intervalo de tempo, do primeiro ao terceiro, inferior a 24h.
+ *	Se ocorrerem dois banhos dentro das 24h, os valores são acumulados no programa.
+ *	Findando o tempo, os valores acumulados e calculados são gravados na flash.
+ */
+
+
+/************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
